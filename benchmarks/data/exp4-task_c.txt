@@ -1,0 +1,13 @@
+In my app I show a block of text with several clickable actions embedded in it, sort
+of like inline links. When the user moves the mouse over one of these clickable
+pieces of text, it's supposed to highlight so they know it's interactive.
+
+The problem is that when several of these clickable pieces of text happen to trigger
+the same underlying action with the same argument (even though they are totally
+separate pieces of text in different places), hovering over just ONE of them
+highlights ALL of them at once. They should each be treated as independent, separate
+clickable pieces of text - highlighting one should never affect any of the others,
+regardless of whether they happen to trigger the same action.
+
+Please fix this so each clickable piece of text has its own independent hover state,
+with regression tests.

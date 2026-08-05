@@ -1,0 +1,58 @@
+diff --git a/rich/ansi.py b/rich/ansi.py
+index 7bbcb0bf..f6c741e1 100644
+--- a/rich/ansi.py
++++ b/rich/ansi.py
+@@ -132,6 +132,7 @@ class AnsiDecoder:
+         Yields:
+             Text: Marked up Text.
+         """
++        terminal_text = terminal_text.replace("\r\n", "\n").replace("\r", "\n")
+         for line in re.split(r"(?<=\n)", terminal_text):
+             yield self.decode_line(line.rstrip("\n"))
+ 
+diff --git a/tests/test_ansi.py b/tests/test_ansi.py
+index 21e20b44..9df78c7b 100644
+--- a/tests/test_ansi.py
++++ b/tests/test_ansi.py
+@@ -102,3 +102,41 @@ def test_decode_newlines():
+     assert Text.from_ansi("Hello\nWorld\n").plain == "Hello\nWorld\n"
+     assert Text.from_ansi("Hello\nWorld\n\n").plain == "Hello\nWorld\n\n"
+     assert Text.from_ansi("\nHello\nWorld\n\n").plain == "\nHello\nWorld\n\n"
++
++
++def test_ansi_decoder_crlf():
++    """CRLF line endings should produce the same output as LF."""
++    decoder = AnsiDecoder()
++    crlf_result = list(decoder.decode("line a\r\nline b\r\nline c\r\n"))
++    decoder2 = AnsiDecoder()
++    lf_result = list(decoder2.decode("line a\nline b\nline c\n"))
++    assert [t.plain for t in crlf_result] == [t.plain for t in lf_result]
++
++
++def test_ansi_decoder_bare_cr():
++    """Bare CR line endings should produce the same output as LF."""
++    decoder = AnsiDecoder()
++    cr_result = list(decoder.decode("line a\rline b\rline c\r"))
++    decoder2 = AnsiDecoder()
++    lf_result = list(decoder2.decode("line a\nline b\nline c\n"))
++    assert [t.plain for t in cr_result] == [t.plain for t in lf_result]
++
++
++def test_ansi_decoder_mixed_endings():
++    """Mixed line endings should all be normalized and all lines preserved."""
++    decoder = AnsiDecoder()
++    result = list(decoder.decode("line a\r\nline b\rline c\nline d"))
++    assert len(result) == 4
++    assert result[0].plain == "line a"
++    assert result[1].plain == "line b"
++    assert result[2].plain == "line c"
++    assert result[3].plain == "line d"
++
++
++def test_ansi_decoder_lf_unchanged():
++    """LF-only inputs should be unaffected by the normalization (idempotent)."""
++    decoder = AnsiDecoder()
++    result = list(decoder.decode("line a\nline b\nline c\n"))
++    assert result[0].plain == "line a"
++    assert result[1].plain == "line b"
++    assert result[2].plain == "line c"

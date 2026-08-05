@@ -1,0 +1,109 @@
+diff --git a/rich/markdown.py b/rich/markdown.py
+index abbbb07d..869aad33 100644
+--- a/rich/markdown.py
++++ b/rich/markdown.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import re
+ import sys
+ from dataclasses import dataclass
+ from typing import ClassVar, Iterable, get_args
+@@ -369,6 +370,9 @@ class ListElement(MarkdownElement):
+                 )
+ 
+ 
++_TASK_LIST_PATTERN = re.compile(r"^\[([ xX])\] ")
++
++
+ class ListItem(TextElement):
+     """An item in a list."""
+ 
+@@ -376,8 +380,14 @@ class ListItem(TextElement):
+ 
+     def __init__(self) -> None:
+         self.elements: Renderables = Renderables()
++        self.checked: bool | None = None  # None = not a task list item
+ 
+     def on_child_close(self, context: MarkdownContext, child: MarkdownElement) -> bool:
++        if self.checked is None and isinstance(child, Paragraph):
++            match = _TASK_LIST_PATTERN.match(child.text.plain)
++            if match:
++                self.checked = match.group(1).lower() == "x"
++                child.text = child.text[len(match.group(0)):]
+         self.elements.append(child)
+         return False
+ 
+@@ -386,7 +396,12 @@ class ListItem(TextElement):
+         lines = console.render_lines(self.elements, render_options, style=self.style)
+         bullet_style = console.get_style("markdown.item.bullet", default="none")
+ 
+-        bullet = Segment(" • ", bullet_style)
++        if self.checked is True:
++            bullet = Segment(" ☑ ", bullet_style)
++        elif self.checked is False:
++            bullet = Segment(" ☐ ", bullet_style)
++        else:
++            bullet = Segment(" • ", bullet_style)
+         padding = Segment(" " * 3, bullet_style)
+         new_line = Segment("\n")
+         for first, line in loop_first(lines):
+diff --git a/tests/test_markdown.py b/tests/test_markdown.py
+index c461c769..336cbcc4 100644
+--- a/tests/test_markdown.py
++++ b/tests/test_markdown.py
+@@ -215,6 +215,54 @@ def test_inline_code_in_table_cells() -> None:
+     assert result == expected
+ 
+ 
++def test_task_list_checkboxes() -> None:
++    """Task list items render ☐/☑ instead of bullet points."""
++    markdown = Markdown(
++        "- [ ] unchecked item\n- [x] checked item\n- [X] also checked\n"
++    )
++    result = render(markdown)
++    assert " ☐ " in result
++    assert " ☑ " in result
++    assert " • " not in result
++    assert "[ ]" not in result
++    assert "[x]" not in result
++    assert "[X]" not in result
++    assert "unchecked item" in result
++    assert "checked item" in result
++    assert "also checked" in result
++
++
++def test_task_list_plain_bullets_unchanged() -> None:
++    """Ordinary bullet lists continue to render with • bullets."""
++    markdown = Markdown("- apples\n- oranges\n- pears\n")
++    result = render(markdown)
++    assert " • " in result
++    assert "☐" not in result
++    assert "☑" not in result
++
++
++def test_task_list_mixed_with_plain() -> None:
++    """A list that mixes task items and plain bullets renders each correctly."""
++    markdown = Markdown(
++        "- [ ] task one\n- [x] task two\n- plain item\n"
++    )
++    result = render(markdown)
++    assert " ☐ " in result
++    assert " ☑ " in result
++    assert " • " in result
++    assert "task one" in result
++    assert "task two" in result
++    assert "plain item" in result
++
++
++def test_task_list_text_stripped() -> None:
++    """The checkbox prefix is stripped from the rendered text."""
++    markdown = Markdown("- [ ] do the thing\n")
++    result = render(markdown)
++    assert "[ ]" not in result
++    assert "do the thing" in result
++
++
+ if __name__ == "__main__":
+     markdown = Markdown(MARKDOWN)
+     rendered = render(markdown)

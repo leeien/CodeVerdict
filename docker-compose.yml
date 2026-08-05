@@ -1,0 +1,26 @@
+# CodeVerdict — single self-contained service.
+#   docker compose run --rm app
+#
+# CodeVerdict is a terminal program, so run it attached rather than `up -d`: there
+# is nothing to visit in a browser.
+services:
+  app:
+    build: .
+    environment:
+      # Provide keys here or via a .env file next to this compose file.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEMO_MODE: "true"           # dry-run PRs; set false only for a repo you own
+      # The code-graph engine caches per-repo graphs here; keep them on a volume
+      # so repos stay indexed across restarts.
+      XDG_CACHE_HOME: /data/cache
+      # Keep the SQLite DB on the mounted volume (see below), not the image.
+      DATABASE_URL: sqlite:////data/codeverdict.db
+    volumes:
+      # Persist the SQLite DB, cloned working copies, and code-graph cache.
+      - codeverdict-data:/data
+      - codeverdict-workspace:/workspace
+
+volumes:
+  codeverdict-data:
+  codeverdict-workspace:

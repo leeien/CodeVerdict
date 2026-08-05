@@ -1,0 +1,124 @@
+diff --git a/src/textual/widgets/_data_table.py b/src/textual/widgets/_data_table.py
+index dd5f9c6d7..1cbdfe35b 100644
+--- a/src/textual/widgets/_data_table.py
++++ b/src/textual/widgets/_data_table.py
+@@ -2609,6 +2609,12 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
+             The `DataTable` instance.
+         """
+ 
++        def _extract_text(value: Any) -> Any:
++            """Extract plain text from Rich Text objects for comparison."""
++            if isinstance(value, Text):
++                return value.plain
++            return value
++
+         def key_wrapper(row: tuple[RowKey, dict[ColumnKey | str, CellType]]) -> Any:
+             _, row_data = row
+             if columns:
+@@ -2617,7 +2623,9 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
+                 result = tuple(row_data.values())
+             if key is not None:
+                 return key(result)
+-            return result
++            if isinstance(result, tuple):
++                return tuple(_extract_text(v) for v in result)
++            return _extract_text(result)
+ 
+         ordered_rows = sorted(
+             self._data.items(),
+diff --git a/tests/test_data_table.py b/tests/test_data_table.py
+index 6750c5ddb..60900c757 100644
+--- a/tests/test_data_table.py
++++ b/tests/test_data_table.py
+@@ -1343,6 +1343,91 @@ async def test_sort_by_function_sum():
+             assert table.get_row_at(i) == row
+ 
+ 
++async def test_sort_rich_text_column():
++    """Sorting a column containing Rich Text objects should not crash and should
++    sort by the visible plain text content."""
++    app = DataTableApp()
++    async with app.run_test():
++        table = app.query_one(DataTable)
++        col = table.add_column("Name")
++        table.add_row(Text("Charlie", style="bold"))
++        table.add_row(Text("Alice", style="red"))
++        table.add_row(Text("Bob", style="italic"))
++
++        table.sort(col)
++        assert table.get_row_at(0)[0].plain == "Alice"
++        assert table.get_row_at(1)[0].plain == "Bob"
++        assert table.get_row_at(2)[0].plain == "Charlie"
++
++        table.sort(col, reverse=True)
++        assert table.get_row_at(0)[0].plain == "Charlie"
++        assert table.get_row_at(1)[0].plain == "Bob"
++        assert table.get_row_at(2)[0].plain == "Alice"
++
++
++async def test_sort_mixed_rich_text_and_plain_strings():
++    """Sorting a column with a mix of Rich Text and plain strings sorts by plain text."""
++    app = DataTableApp()
++    async with app.run_test():
++        table = app.query_one(DataTable)
++        col = table.add_column("Name")
++        table.add_row(Text("Zara", style="bold"))
++        table.add_row("Alex")
++        table.add_row(Text("Mike", style="red"))
++
++        table.sort(col)
++        first = table.get_row_at(0)[0]
++        second = table.get_row_at(1)[0]
++        third = table.get_row_at(2)[0]
++        # Extract plain text for comparison regardless of type
++        def plain(v):
++            return v.plain if isinstance(v, Text) else v
++
++        assert plain(first) == "Alex"
++        assert plain(second) == "Mike"
++        assert plain(third) == "Zara"
++
++
++async def test_sort_rich_text_same_order_as_plain_strings():
++    """Sorting Rich Text cells produces the same order as equivalent plain strings."""
++    app = DataTableApp()
++    async with app.run_test():
++        table_rich = app.query_one(DataTable)
++        col_rich = table_rich.add_column("Name")
++        names = ["Banana", "Apple", "Cherry", "Date"]
++        for name in names:
++            table_rich.add_row(Text(name, style="bold"))
++        table_rich.sort(col_rich)
++        rich_order = [table_rich.get_row_at(i)[0].plain for i in range(len(names))]
++
++    app2 = DataTableApp()
++    async with app2.run_test():
++        table_plain = app2.query_one(DataTable)
++        col_plain = table_plain.add_column("Name")
++        for name in names:
++            table_plain.add_row(name)
++        table_plain.sort(col_plain)
++        plain_order = [table_plain.get_row_at(i)[0] for i in range(len(names))]
++
++    assert rich_order == plain_order
++
++
++async def test_sort_all_columns_with_rich_text():
++    """Sorting all columns (no column specified) works when cells contain Rich Text."""
++    app = DataTableApp()
++    async with app.run_test():
++        table = app.query_one(DataTable)
++        table.add_columns("A", "B")
++        table.add_row(Text("Charlie"), Text("Y"))
++        table.add_row(Text("Alice"), Text("Z"))
++        table.add_row(Text("Bob"), Text("X"))
++
++        table.sort()
++        assert table.get_row_at(0)[0].plain == "Alice"
++        assert table.get_row_at(1)[0].plain == "Bob"
++        assert table.get_row_at(2)[0].plain == "Charlie"
++
++
+ @pytest.mark.parametrize(
+     ["cell", "height"],
+     [

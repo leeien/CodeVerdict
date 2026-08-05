@@ -1,0 +1,142 @@
+diff --git a/src/click/_termui_impl.py b/src/click/_termui_impl.py
+index fadae94..b6fc2c3 100644
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -67,6 +67,7 @@ class ProgressBar(t.Generic[V]):
+         show_eta: bool = True,
+         show_percent: bool | None = None,
+         show_pos: bool = False,
++        show_speed: bool = False,
+         item_show_func: t.Callable[[V | None], str | None] | None = None,
+         label: str | None = None,
+         file: t.TextIO | None = None,
+@@ -82,6 +83,7 @@ class ProgressBar(t.Generic[V]):
+         self.show_eta = show_eta
+         self.show_percent = show_percent
+         self.show_pos = show_pos
++        self.show_speed = show_speed
+         self.item_show_func = item_show_func
+         self.label: str = label or ""
+ 
+@@ -207,6 +209,11 @@ class ProgressBar(t.Generic[V]):
+     def format_pct(self) -> str:
+         return f"{int(self.pct * 100): 4}%"[1:]
+ 
++    def format_speed(self) -> str:
++        if self.time_per_iteration == 0:
++            return "?"
++        return f"{1.0 / self.time_per_iteration:.2f}/s"
++
+     def format_bar(self) -> str:
+         if self.length is not None:
+             bar_length = int(self.pct * self.width)
+@@ -239,6 +246,8 @@ class ProgressBar(t.Generic[V]):
+             info_bits.append(self.format_pct())
+         if self.show_eta and self.eta_known and not self.finished:
+             info_bits.append(self.format_eta())
++        if self.show_speed and not self.finished:
++            info_bits.append(self.format_speed())
+         if self.item_show_func is not None:
+             item_info = self.item_show_func(self.current_item)
+             if item_info is not None:
+diff --git a/src/click/termui.py b/src/click/termui.py
+index 4bd74ed..7c09259 100644
+--- a/src/click/termui.py
++++ b/src/click/termui.py
+@@ -364,6 +364,7 @@ def progressbar(
+     show_eta: bool = True,
+     show_percent: bool | None = None,
+     show_pos: bool = False,
++    show_speed: bool = False,
+     fill_char: str = "#",
+     empty_char: str = "-",
+     bar_template: str = "%(label)s  [%(bar)s]  %(info)s",
+@@ -384,6 +385,7 @@ def progressbar(
+     show_eta: bool = True,
+     show_percent: bool | None = None,
+     show_pos: bool = False,
++    show_speed: bool = False,
+     item_show_func: t.Callable[[V | None], str | None] | None = None,
+     fill_char: str = "#",
+     empty_char: str = "-",
+@@ -404,6 +406,7 @@ def progressbar(
+     show_eta: bool = True,
+     show_percent: bool | None = None,
+     show_pos: bool = False,
++    show_speed: bool = False,
+     item_show_func: t.Callable[[V | None], str | None] | None = None,
+     fill_char: str = "#",
+     empty_char: str = "-",
+@@ -487,6 +490,8 @@ def progressbar(
+                          `False` if not.
+     :param show_pos: enables or disables the absolute position display.  The
+                      default is `False`.
++    :param show_speed: enables or disables the processing speed display
++                       (items per second). Defaults to ``False``.
+     :param item_show_func: A function called with the current item which
+         can return a string to show next to the progress bar. If the
+         function returns ``None`` nothing is shown. The current item can
+@@ -542,6 +547,7 @@ def progressbar(
+         show_eta=show_eta,
+         show_percent=show_percent,
+         show_pos=show_pos,
++        show_speed=show_speed,
+         item_show_func=item_show_func,
+         fill_char=fill_char,
+         empty_char=empty_char,
+diff --git a/tests/test_termui.py b/tests/test_termui.py
+index 98e2577..4c07160 100644
+--- a/tests/test_termui.py
++++ b/tests/test_termui.py
+@@ -350,6 +350,51 @@ def test_progress_bar_update_min_steps(runner):
+     assert bar.pos == 5
+ 
+ 
++def test_progressbar_format_speed_no_data(runner):
++    with _create_progress(10) as progress:
++        # avg is empty before any steps — should return "?"
++        assert progress.format_speed() == "?"
++
++
++@pytest.mark.parametrize(
++    "avg, expected",
++    [
++        ([1.0], "1.00/s"),
++        ([0.5], "2.00/s"),
++        ([0.25, 0.75], "2.00/s"),  # avg time_per_iteration = 0.5 => 2.00/s
++    ],
++)
++def test_progressbar_format_speed(runner, avg, expected):
++    with _create_progress(10, avg=avg) as progress:
++        assert progress.format_speed() == expected
++
++
++def test_progressbar_show_speed_off_by_default(runner):
++    with _create_progress(10, avg=[0.5]) as progress:
++        line = progress.format_progress_line()
++        assert "/s" not in line
++
++
++def test_progressbar_show_speed_in_progress_line(runner):
++    with _create_progress(10, avg=[0.5], show_speed=True) as progress:
++        line = progress.format_progress_line()
++        assert "2.00/s" in line
++
++
++def test_progressbar_show_speed_hidden_when_finished(runner):
++    with _create_progress(10, avg=[0.5], show_speed=True, finished=True) as progress:
++        line = progress.format_progress_line()
++        assert "/s" not in line
++
++
++def test_progressbar_show_speed_via_progressbar_function(runner):
++    bar = click.progressbar(range(10), show_speed=True)
++    assert bar.show_speed is True
++
++    bar_default = click.progressbar(range(10))
++    assert bar_default.show_speed is False
++
++
+ @pytest.mark.parametrize("key_char", ("h", "H", "é", "À", " ", "字", "àH", "àR"))
+ @pytest.mark.parametrize("echo", [True, False])
+ @pytest.mark.skipif(not WIN, reason="Tests user-input using the msvcrt module.")

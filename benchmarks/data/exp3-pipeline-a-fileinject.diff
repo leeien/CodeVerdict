@@ -1,0 +1,104 @@
+diff --git a/rich/markdown.py b/rich/markdown.py
+index abbbb07d..3beeb1a8 100644
+--- a/rich/markdown.py
++++ b/rich/markdown.py
+@@ -381,12 +381,37 @@ class ListItem(TextElement):
+         self.elements.append(child)
+         return False
+ 
++    def _get_checkbox(self) -> str | None:
++        """Detect GFM checkbox syntax in the first paragraph and return a Unicode symbol."""
++        elements = list(self.elements)
++        if not elements or not isinstance(elements[0], Paragraph):
++            return None
++        plain = elements[0].text.plain
++        if len(plain) >= 4 and plain[0] == "[" and plain[2] == "]" and plain[3] == " ":
++            if plain[1] == " ":
++                return "☐"
++            if plain[1] in "xX":
++                return "☑"
++        return None
++
+     def render_bullet(self, console: Console, options: ConsoleOptions) -> RenderResult:
+         render_options = options.update(width=options.max_width - 3)
+-        lines = console.render_lines(self.elements, render_options, style=self.style)
++        checkbox = self._get_checkbox()
++        if checkbox is not None:
++            elements = list(self.elements)
++            first_para = elements[0]
++            new_para = Paragraph(justify=first_para.justify)
++            new_para.text = first_para.text[4:]
++            new_elements: Renderables = Renderables()
++            new_elements.append(new_para)
++            for elem in elements[1:]:
++                new_elements.append(elem)
++            lines = console.render_lines(new_elements, render_options, style=self.style)
++        else:
++            lines = console.render_lines(self.elements, render_options, style=self.style)
+         bullet_style = console.get_style("markdown.item.bullet", default="none")
+ 
+-        bullet = Segment(" • ", bullet_style)
++        bullet = Segment(f" {checkbox} " if checkbox else " • ", bullet_style)
+         padding = Segment(" " * 3, bullet_style)
+         new_line = Segment("\n")
+         for first, line in loop_first(lines):
+diff --git a/tests/test_markdown.py b/tests/test_markdown.py
+index c461c769..c81f27f0 100644
+--- a/tests/test_markdown.py
++++ b/tests/test_markdown.py
+@@ -215,6 +215,55 @@ def test_inline_code_in_table_cells() -> None:
+     assert result == expected
+ 
+ 
++def test_checkbox_unchecked() -> None:
++    markdown = Markdown("- [ ] unchecked item")
++    result = render(markdown)
++    assert "☐" in result
++    assert "unchecked item" in result
++    assert "[ ]" not in result
++
++
++def test_checkbox_checked_lowercase() -> None:
++    markdown = Markdown("- [x] checked item")
++    result = render(markdown)
++    assert "☑" in result
++    assert "checked item" in result
++    assert "[x]" not in result
++
++
++def test_checkbox_checked_uppercase() -> None:
++    markdown = Markdown("- [X] checked item")
++    result = render(markdown)
++    assert "☑" in result
++    assert "checked item" in result
++    assert "[X]" not in result
++
++
++def test_checkbox_plain_bullet_unchanged() -> None:
++    markdown = Markdown("- plain bullet")
++    result = render(markdown)
++    assert "•" in result
++    assert "plain bullet" in result
++    assert "☐" not in result
++    assert "☑" not in result
++
++
++def test_checkbox_non_checkbox_bracket_unchanged() -> None:
++    markdown = Markdown("- [not a checkbox] item")
++    result = render(markdown)
++    assert "•" in result
++    assert "[not a checkbox]" in result
++    assert "☐" not in result
++    assert "☑" not in result
++
++
++def test_checkbox_idempotent() -> None:
++    md_text = "- [ ] task\n- [x] done\n"
++    result1 = render(Markdown(md_text))
++    result2 = render(Markdown(md_text))
++    assert result1 == result2
++
++
+ if __name__ == "__main__":
+     markdown = Markdown(MARKDOWN)
+     rendered = render(markdown)

@@ -1,0 +1,51 @@
+diff --git a/rich/ansi.py b/rich/ansi.py
+index 7bbcb0bf..f6c741e1 100644
+--- a/rich/ansi.py
++++ b/rich/ansi.py
+@@ -132,6 +132,7 @@ class AnsiDecoder:
+         Yields:
+             Text: Marked up Text.
+         """
++        terminal_text = terminal_text.replace("\r\n", "\n").replace("\r", "\n")
+         for line in re.split(r"(?<=\n)", terminal_text):
+             yield self.decode_line(line.rstrip("\n"))
+ 
+diff --git a/tests/test_ansi.py b/tests/test_ansi.py
+index 21e20b44..fa3cd48d 100644
+--- a/tests/test_ansi.py
++++ b/tests/test_ansi.py
+@@ -102,3 +102,34 @@ def test_decode_newlines():
+     assert Text.from_ansi("Hello\nWorld\n").plain == "Hello\nWorld\n"
+     assert Text.from_ansi("Hello\nWorld\n\n").plain == "Hello\nWorld\n\n"
+     assert Text.from_ansi("\nHello\nWorld\n\n").plain == "\nHello\nWorld\n\n"
++
++
++def test_ansi_decoder_crlf():
++    """CRLF line endings should produce identical output to LF-only input."""
++    decoder = AnsiDecoder()
++    crlf_lines = list(decoder.decode("Hello\r\nWorld\r\n"))
++    lf_lines = list(decoder.decode("Hello\nWorld\n"))
++    assert crlf_lines == lf_lines
++
++
++def test_ansi_decoder_bare_cr():
++    """Bare CR line endings should produce identical output to LF-only input."""
++    decoder = AnsiDecoder()
++    cr_lines = list(decoder.decode("Hello\rWorld\r"))
++    lf_lines = list(decoder.decode("Hello\nWorld\n"))
++    assert cr_lines == lf_lines
++
++
++def test_ansi_decoder_mixed_endings():
++    """Mixed line endings should produce identical output to LF-only input."""
++    decoder = AnsiDecoder()
++    mixed_lines = list(decoder.decode("Hello\r\nWorld\rFoo\n"))
++    lf_lines = list(decoder.decode("Hello\nWorld\nFoo\n"))
++    assert mixed_lines == lf_lines
++
++
++def test_ansi_decoder_lf_unchanged():
++    """LF-only input should be unaffected by normalization."""
++    decoder = AnsiDecoder()
++    lf_lines = list(decoder.decode("Hello\nWorld\n"))
++    assert [str(t) for t in lf_lines] == ["Hello", "World", ""]

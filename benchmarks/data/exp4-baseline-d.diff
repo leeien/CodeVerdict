@@ -1,0 +1,107 @@
+diff --git a/src/textual/widgets/_button.py b/src/textual/widgets/_button.py
+index ad82140..11e6c07 100644
+--- a/src/textual/widgets/_button.py
++++ b/src/textual/widgets/_button.py
+@@ -432,7 +432,7 @@ class Button(Widget, can_focus=True):
+         self._start_active_affect()
+         # ...and let other components know that we've just been clicked:
+         if self.action is None:
+-            self.post_message(Button.Pressed(self))
++            self.post_message(self.Pressed(self))
+         else:
+             self.call_later(
+                 self.app.run_action, self.action, default_namespace=self._parent
+diff --git a/tests/test_on.py b/tests/test_on.py
+index 7483a7b..4bb6c5e 100644
+--- a/tests/test_on.py
++++ b/tests/test_on.py
+@@ -378,3 +378,89 @@ async def test_on_with_enter_and_leave_events():
+         await pilot.hover(Button, offset=(0, 20))
+         expected_messages.append("Leave")
+         assert app.messages == expected_messages
++
++
++class SpecialButton(Button):
++    """A specialised button subclass with its own Pressed message."""
++
++    class Pressed(Button.Pressed):
++        """Posted when a SpecialButton is pressed."""
++
++
++async def test_subclassed_button_dispatches_subclass_message() -> None:
++    """Pressing a SpecialButton should dispatch SpecialButton.Pressed, not Button.Pressed."""
++    dispatched: list[str] = []
++
++    class SubclassButtonApp(App):
++        def compose(self) -> ComposeResult:
++            yield Button("General", id="general")
++            yield SpecialButton("Special", id="special")
++
++        @on(SpecialButton.Pressed)
++        def on_special(self, event: SpecialButton.Pressed) -> None:
++            dispatched.append(f"special:{event.__class__.__name__}")
++
++        @on(Button.Pressed)
++        def on_general(self, event: Button.Pressed) -> None:
++            dispatched.append(f"general:{event.__class__.__name__}")
++
++    async with SubclassButtonApp().run_test() as pilot:
++        await pilot.click("#general")
++        await pilot.pause()
++        await pilot.click("#special")
++        await pilot.pause()
++
++    # Pressing the plain Button fires only the general handler.
++    assert dispatched[0] == "general:Pressed"
++    # Pressing the SpecialButton fires both handlers (specific first, then general via MRO).
++    assert "special:Pressed" in dispatched[1:]
++    assert "general:Pressed" in dispatched[1:]
++    # The specific handler must NOT have fired for the plain Button press.
++    assert dispatched.count("special:Pressed") == 1
++
++
++async def test_specific_handler_does_not_fire_for_general_button() -> None:
++    """A handler for SpecialButton.Pressed must not trigger when a plain Button is pressed."""
++    specific_fired_for: list[str] = []
++
++    class App2(App):
++        def compose(self) -> ComposeResult:
++            yield Button("General", id="general")
++            yield SpecialButton("Special", id="special")
++
++        @on(SpecialButton.Pressed)
++        def catch_specific(self, event: SpecialButton.Pressed) -> None:
++            specific_fired_for.append(event.button.id or "")
++
++    async with App2().run_test() as pilot:
++        await pilot.click("#general")
++        await pilot.pause()
++        await pilot.click("#special")
++        await pilot.pause()
++
++    assert specific_fired_for == ["special"], (
++        "SpecialButton.Pressed handler fired for the wrong button(s)"
++    )
++
++
++async def test_general_handler_fires_for_both_button_types() -> None:
++    """A handler for Button.Pressed must fire for both Button and SpecialButton presses."""
++    general_fired_for: list[str] = []
++
++    class App3(App):
++        def compose(self) -> ComposeResult:
++            yield Button("General", id="general")
++            yield SpecialButton("Special", id="special")
++
++        @on(Button.Pressed)
++        def catch_general(self, event: Button.Pressed) -> None:
++            general_fired_for.append(event.button.id or "")
++
++    async with App3().run_test() as pilot:
++        await pilot.click("#general")
++        await pilot.pause()
++        await pilot.click("#special")
++        await pilot.pause()
++
++    assert "general" in general_fired_for
++    assert "special" in general_fired_for

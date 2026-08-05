@@ -1,0 +1,221 @@
+diff --git a/src/textual/widgets/_markdown.py b/src/textual/widgets/_markdown.py
+index 847f5cfa5..e4b694955 100644
+--- a/src/textual/widgets/_markdown.py
++++ b/src/textual/widgets/_markdown.py
+@@ -1,6 +1,7 @@
+ from __future__ import annotations
+ 
+ import asyncio
++import itertools
+ import re
+ import weakref
+ from contextlib import suppress
+@@ -31,6 +32,10 @@ from textual.widget import Widget
+ from textual.widgets import Static, Tree
+ from textual.widgets._label import Label
+ 
++_link_region_id = itertools.count(1)
++"""Counter to assign unique region IDs to each link span, preventing LRU-cached Style.__add__
++from merging spans with identical actions into a shared Style (and thus shared link_id)."""
++
+ TableOfContentsType: TypeAlias = "list[tuple[int, str, str | None]]"
+ """Information about the table of contents of a markdown document.
+ 
+@@ -342,12 +347,16 @@ class MarkdownBlock(Static):
+             elif child_type == "link_open":
+                 href = child.attrs.get("href", "")
+                 action = f"link({href!r})"
+-                add_style(Style.from_meta({"@click": action}))
++                add_style(
++                    Style.from_meta({"@click": action, "@region": next(_link_region_id)})
++                )
+             elif child_type == "image":
+                 href = child.attrs.get("src", "")
+                 alt = child.attrs.get("alt", "")
+                 action = f"link({href!r})"
+-                add_style(Style.from_meta({"@click": action}))
++                add_style(
++                    Style.from_meta({"@click": action, "@region": next(_link_region_id)})
++                )
+                 add_content("🖼  ")
+                 if alt:
+                     add_content(f"({alt})")
+diff --git a/tests/test_widgets_log.py b/tests/test_widgets_log.py
+new file mode 100644
+index 000000000..9b965fcbf
+--- /dev/null
++++ b/tests/test_widgets_log.py
+@@ -0,0 +1,55 @@
++"""Basic regression tests for the Log widget."""
++from __future__ import annotations
++
++import pytest
++
++from textual.app import App, ComposeResult
++from textual.widgets import Log
++
++
++class _LogApp(App):
++    def compose(self) -> ComposeResult:
++        yield Log()
++
++
++async def test_log_creation():
++    """Log widget can be composed into an app."""
++    async with _LogApp().run_test() as pilot:
++        assert pilot.app.query_one(Log) is not None
++
++
++async def test_log_write_and_line_count():
++    """Writing lines increments line_count."""
++    async with _LogApp().run_test() as pilot:
++        log = pilot.app.query_one(Log)
++        assert log.line_count == 0
++        log.write_line("hello")
++        await pilot.pause()
++        assert log.line_count == 1
++        log.write_line("world")
++        await pilot.pause()
++        assert log.line_count == 2
++
++
++async def test_log_clear():
++    """Clearing the log resets line_count to 0."""
++    async with _LogApp().run_test() as pilot:
++        log = pilot.app.query_one(Log)
++        log.write_line("a")
++        log.write_line("b")
++        await pilot.pause()
++        log.clear()
++        await pilot.pause()
++        assert log.line_count == 0
++
++
++async def test_log_no_hover_state_issue():
++    """Log has no inline clickable regions, so there is no hover-state sharing concern.
++    This test documents that Log widgets render without errors."""
++    async with _LogApp().run_test() as pilot:
++        log = pilot.app.query_one(Log)
++        log.write("line with text\n")
++        log.write("another line\n")
++        await pilot.pause()
++        # Verify the log rendered without error and has the expected line count.
++        assert log.line_count == 2
+diff --git a/tests/test_widgets_markdown.py b/tests/test_widgets_markdown.py
+new file mode 100644
+index 000000000..a04a465fb
+--- /dev/null
++++ b/tests/test_widgets_markdown.py
+@@ -0,0 +1,112 @@
++"""Regression tests for Markdown widget hover state tracking."""
++from __future__ import annotations
++
++import pytest
++from markdown_it.token import Token
++
++from textual.style import Style
++from textual.widgets._markdown import MarkdownBlock, _link_region_id
++
++
++def _make_dummy_token() -> Token:
++    token = Token("inline", "", 0)
++    token.map = [0, 1]
++    return token
++
++
++class _DummyMarkdown:
++    """Minimal stand-in so MarkdownBlock can be constructed without a full App."""
++
++    source = ""
++
++
++def _build_link_token(href: str, text: str) -> Token:
++    """Build an inline token containing a single link."""
++    outer = Token("inline", "", 0)
++    outer.map = [0, 1]
++    link_open = Token("link_open", "a", 1)
++    link_open.attrs = {"href": href}
++    text_tok = Token("text", "", 0)
++    text_tok.content = text
++    link_close = Token("link_close", "a", -1)
++    outer.children = [link_open, text_tok, link_close]
++    return outer
++
++
++def test_same_href_links_produce_unique_styles():
++    """Two spans with the same href must yield different Style objects so that
++    Style.__add__'s LRU cache does not collapse them into a shared identity."""
++    href = "https://example.com"
++    action = f"link({href!r})"
++
++    s1 = Style.from_meta({"@click": action, "@region": 1})
++    s2 = Style.from_meta({"@click": action, "@region": 2})
++
++    base = Style()
++    combined1 = base + s1
++    combined2 = base + s2
++
++    assert combined1 is not combined2, (
++        "Spans with different @region must not share a combined Style"
++    )
++    assert combined1.rich_style._link_id != combined2.rich_style._link_id, (
++        "Each link span must have a unique link_id so hover highlighting is independent"
++    )
++
++
++def test_link_region_counter_monotonically_increases():
++    """Consecutive calls to next(_link_region_id) must return strictly increasing values."""
++    a = next(_link_region_id)
++    b = next(_link_region_id)
++    assert b > a
++
++
++def test_two_identical_href_links_have_independent_hover_link_ids():
++    """Render two links with the same href and verify their segments carry different
++    link_ids, which is the property that prevents shared hover highlighting."""
++    import weakref
++
++    href = "https://example.com"
++
++    # Simulate what _token_to_content does for two separate link spans.
++    region_a = next(_link_region_id)
++    region_b = next(_link_region_id)
++    assert region_a != region_b
++
++    action = f"link({href!r})"
++    style_a = Style.from_meta({"@click": action, "@region": region_a})
++    style_b = Style.from_meta({"@click": action, "@region": region_b})
++
++    base = Style()
++    combined_a = base + style_a
++    combined_b = base + style_b
++
++    # Verify the combined styles are distinct objects.
++    assert combined_a is not combined_b
++
++    # Verify the rich_style link_ids are distinct — this is what style_links() uses
++    # to identify which segments to highlight on hover.
++    assert combined_a.rich_style._link_id != combined_b.rich_style._link_id
++
++
++def test_same_style_without_region_would_collide():
++    """Document the pre-fix behaviour: without @region, two identical @click styles
++    collapse into the same combined Style (same link_id), causing shared hover."""
++    href = "https://example.com"
++    action = f"link({href!r})"
++
++    # Without @region, the two styles are equal and hash the same.
++    s1 = Style.from_meta({"@click": action})
++    s2 = Style.from_meta({"@click": action})
++    assert s1 == s2, "Pre-condition: same meta → equal Style objects"
++
++    base = Style()
++    combined1 = base + s1
++    combined2 = base + s2
++    # LRU cache collapses them.
++    assert combined1 is combined2, (
++        "Without @region the LRU cache merges identical styles (documents the root cause)"
++    )
++    assert combined1.rich_style._link_id == combined2.rich_style._link_id, (
++        "Shared combined Style means shared link_id (root cause of the hover bug)"
++    )

@@ -1,0 +1,198 @@
+diff --git a/src/click/core.py b/src/click/core.py
+index b08f043..5c490a6 100644
+--- a/src/click/core.py
++++ b/src/click/core.py
+@@ -2720,6 +2720,23 @@ class Parameter(ABC):
+ 
+         return rv
+ 
++    def get_active_envvar(self, ctx: Context) -> str | None:
++        """Return the name of the environment variable whose value is currently
++        set and will be used for this parameter, or ``None`` if no environment
++        variable is set.
++
++        :meta private:
++        """
++        if isinstance(self.envvar, str):
++            if os.environ.get(self.envvar):
++                return self.envvar
++        elif self.envvar:
++            for envvar in self.envvar:
++                if os.environ.get(envvar):
++                    return envvar
++
++        return None
++
+     def handle_parse_result(
+         self, ctx: Context, opts: cabc.Mapping[str, t.Any], args: list[str]
+     ) -> tuple[t.Any, list[str]]:
+@@ -2769,6 +2786,12 @@ class Parameter(ABC):
+             # Process the value through the parameter's type.
+             try:
+                 value = self.process_value(ctx, value)
++            except BadParameter as e:
++                if source is ParameterSource.ENVIRONMENT and e.env_var is None:
++                    e.env_var = self.get_active_envvar(ctx)
++                if not ctx.resilient_parsing:
++                    raise
++                value = UNSET
+             except Exception:
+                 if not ctx.resilient_parsing:
+                     raise
+@@ -3579,6 +3602,26 @@ class Option(Parameter):
+ 
+         return rv
+ 
++    def get_active_envvar(self, ctx: Context) -> str | None:
++        """:class:`Option` resolves the active environment variable the same way as
++        :meth:`Parameter.get_active_envvar`, but also checks
++        :attr:`Context.auto_envvar_prefix` as a fallback.
++
++        :meta private:
++        """
++        rv = super().get_active_envvar(ctx)
++
++        if rv is not None:
++            return rv
++
++        if self.allow_from_autoenv and ctx.auto_envvar_prefix is not None and self.name:
++            envvar = f"{ctx.auto_envvar_prefix}_{self.name.upper()}"
++
++            if os.environ.get(envvar):
++                return envvar
++
++        return None
++
+     def consume_value(
+         self, ctx: Context, opts: cabc.Mapping[str, Parameter]
+     ) -> tuple[t.Any, ParameterSource]:
+diff --git a/src/click/exceptions.py b/src/click/exceptions.py
+index 6272c38..614c1f5 100644
+--- a/src/click/exceptions.py
++++ b/src/click/exceptions.py
+@@ -127,10 +127,14 @@ class BadParameter(UsageError):
+                        where custom validation should happen.  If it is
+                        a string it's used as such, if it's a list then
+                        each item is quoted and separated.
++    :param env_var: the name of the environment variable that provided the
++                    bad value, if any.  When set, the error message will
++                    name the variable so users know where the value came from.
+     """
+ 
+     param: Parameter | None
+     param_hint: cabc.Sequence[str] | str | None
++    env_var: str | None
+ 
+     def __init__(
+         self,
+@@ -138,10 +142,12 @@ class BadParameter(UsageError):
+         ctx: Context | None = None,
+         param: Parameter | None = None,
+         param_hint: cabc.Sequence[str] | str | None = None,
++        env_var: str | None = None,
+     ) -> None:
+         super().__init__(message, ctx)
+         self.param = param
+         self.param_hint = param_hint
++        self.env_var = env_var
+ 
+     def format_message(self) -> str:
+         if self.param_hint is not None:
+@@ -149,8 +155,23 @@ class BadParameter(UsageError):
+         elif self.param is not None:
+             param_hint = self.param.get_error_hint(self.ctx)
+         else:
++            if self.env_var is not None:
++                return _(
++                    "Invalid value (set by environment variable {env_var!r}):"
++                    " {message}"
++                ).format(env_var=self.env_var, message=self.message)
+             return _("Invalid value: {message}").format(message=self.message)
+ 
++        if self.env_var is not None:
++            return _(
++                "Invalid value for {param_hint} (set by environment variable"
++                " {env_var!r}): {message}"
++            ).format(
++                param_hint=_join_param_hints(param_hint),
++                env_var=self.env_var,
++                message=self.message,
++            )
++
+         return _("Invalid value for {param_hint}: {message}").format(
+             param_hint=_join_param_hints(param_hint), message=self.message
+         )
+diff --git a/tests/test_options.py b/tests/test_options.py
+index 2547cc9..65e6dc7 100644
+--- a/tests/test_options.py
++++ b/tests/test_options.py
+@@ -564,11 +564,67 @@ def test_boolean_envvar_bad_values(runner, value):
+     result = runner.invoke(cli, [], env={"SHOUT": value})
+     assert result.exit_code == 2
+     assert (
+-        f"Invalid value for '--shout': {value!r} is not a valid boolean."
+-        in result.output
++        f"Invalid value for '--shout' (set by environment variable 'SHOUT'): "
++        f"{value!r} is not a valid boolean." in result.output
++    )
++
++
++def test_envvar_bad_value_names_variable(runner):
++    """A type error from an env var should name the variable in the message."""
++
++    @click.command()
++    @click.option("--count", type=int, envvar="MY_COUNT")
++    def cli(count):
++        click.echo(count)
++
++    result = runner.invoke(cli, [], env={"MY_COUNT": "abc"})
++    assert result.exit_code == 2
++    assert (
++        "Invalid value for '--count' (set by environment variable 'MY_COUNT'): "
++        "'abc' is not a valid integer." in result.output
+     )
+ 
+ 
++def test_envvar_bad_value_multiple_envvars(runner):
++    """When multiple env vars are configured, the message names the one that is set."""
++
++    @click.command()
++    @click.option("--count", type=int, envvar=["FIRST_COUNT", "ALT_COUNT"])
++    def cli(count):
++        click.echo(count)
++
++    result = runner.invoke(cli, [], env={"ALT_COUNT": "xyz"})
++    assert result.exit_code == 2
++    assert "set by environment variable 'ALT_COUNT'" in result.output
++
++
++def test_envvar_bad_value_auto_prefix(runner):
++    """A type error from an auto-prefixed env var should name the variable."""
++
++    @click.command()
++    @click.option("--count", type=int)
++    def cli(count):
++        click.echo(count)
++
++    result = runner.invoke(cli, [], env={"CLI_COUNT": "abc"}, auto_envvar_prefix="CLI")
++    assert result.exit_code == 2
++    assert "set by environment variable 'CLI_COUNT'" in result.output
++
++
++def test_cmdline_bad_value_no_envvar_hint(runner):
++    """A type error from the command line should NOT mention any env var."""
++
++    @click.command()
++    @click.option("--count", type=int, envvar="MY_COUNT")
++    def cli(count):
++        click.echo(count)
++
++    result = runner.invoke(cli, ["--count", "abc"])
++    assert result.exit_code == 2
++    assert "environment variable" not in result.output
++    assert "Invalid value for '--count': 'abc' is not a valid integer." in result.output
++
++
+ def test_multiple_default_help(runner):
+     @click.command()
+     @click.option("--arg1", multiple=True, default=("foo", "bar"), show_default=True)

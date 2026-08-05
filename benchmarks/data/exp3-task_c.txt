@@ -1,0 +1,16 @@
+In my app I print a line of text that contains a web address, and I make that web address
+clickable so the reader can open it straight from the terminal. Separately, I also have
+the app emphasise certain important words wherever they appear in the text, so they stand
+out in colour.
+
+The problem shows up when one of those emphasised words happens to fall inside the web
+address. The address stops behaving like one single clickable thing. Instead the terminal
+treats it as several different links sitting next to each other: hovering over it only
+lights up part of the address at a time, and the underline breaks into pieces. If I remove
+the emphasis, the address goes back to being one clean clickable link.
+
+A web address should stay one single clickable link no matter what other styling happens
+to overlap it. Emphasis and clickability should be able to coexist on the same stretch of
+text without the link being chopped up.
+
+Please fix this, with regression tests.

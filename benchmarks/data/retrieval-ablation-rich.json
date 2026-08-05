@@ -1,0 +1,57 @@
+{
+  "repo": "https://github.com/Textualize/rich",
+  "k": 8,
+  "results": {
+    "full pipeline": {
+      "recall_at_k": 1.0,
+      "mrr": 0.9333333333333333,
+      "hits": 15,
+      "n": 15,
+      "misses": []
+    },
+    "no graph expansion": {
+      "recall_at_k": 1.0,
+      "mrr": 0.9333333333333333,
+      "hits": 15,
+      "n": 15,
+      "misses": []
+    },
+    "no lexical refinement": {
+      "recall_at_k": 1.0,
+      "mrr": 0.9333333333333333,
+      "hits": 15,
+      "n": 15,
+      "misses": []
+    },
+    "no rerank": {
+      "recall_at_k": 1.0,
+      "mrr": 0.7777777777777778,
+      "hits": 15,
+      "n": 15,
+      "misses": []
+    },
+    "2-hop expansion": {
+      "recall_at_k": 1.0,
+      "mrr": 0.9333333333333333,
+      "hits": 15,
+      "n": 15,
+      "misses": []
+    },
+    "fuse only (no stage 2-5)": {
+      "recall_at_k": 1.0,
+      "mrr": 0.7777777777777778,
+      "hits": 15,
+      "n": 15,
+      "misses": []
+    },
+    "no semantic channel (BM25 only)": {
+      "recall_at_k": 0.9333333333333333,
+      "mrr": 0.6611111111111111,
+      "hits": 14,
+      "n": 15,
+      "misses": [
+        "rich/cells.py (got rich/markup.py, rich/text.py, rich/control.py)"
+      ]
+    }
+  }
+}

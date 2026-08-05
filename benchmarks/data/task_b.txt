@@ -1,0 +1,1 @@
+Bug report: I ran an update that increments a counter field on all matching documents. Some of the matched documents don't have that field yet, and the whole update crashed with a KeyError instead of updating anything. I would expect documents that don't have the field to simply be left unchanged, while the rest still get updated. Please fix this, with regression tests.

@@ -1,0 +1,10 @@
+I have a table in my terminal app where each row can be sorted by clicking a column
+header or calling a sort function. This works fine for plain text and numbers.
+
+The problem is when a cell contains text that has its own colours or styling applied
+to it (rather than plain text) - sorting a column with cells like that crashes the
+whole app with an error instead of sorting them.
+
+Please make sorting work for styled/colourful cell content the same way it already
+works for plain text and numbers, so the table sorts by the visible text without
+crashing. Add regression tests.

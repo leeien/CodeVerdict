@@ -1,0 +1,66 @@
+diff --git a/tests/test_operations.py b/tests/test_operations.py
+index 3a6f814..7baad7f 100644
+--- a/tests/test_operations.py
++++ b/tests/test_operations.py
+@@ -1,5 +1,5 @@
+ from tinydb import where
+-from tinydb.operations import delete, increment, decrement, add, subtract, set
++from tinydb.operations import delete, increment, decrement, add, subtract, multiply, divide, set
+ 
+ 
+ def test_delete(db):
+@@ -35,3 +35,23 @@ def test_increment(db):
+ def test_decrement(db):
+     db.update(decrement('int'), where('char') == 'a')
+     assert db.get(where('char') == 'a')['int'] == 0
++
++
++def test_multiply(db):
++    db.update(multiply('int', 3), where('char') == 'a')
++    assert db.get(where('char') == 'a')['int'] == 3
++
++
++def test_multiply_float(db):
++    db.update(multiply('int', 2.5), where('char') == 'a')
++    assert db.get(where('char') == 'a')['int'] == 2.5
++
++
++def test_divide(db):
++    db.update(divide('int', 2), where('char') == 'a')
++    assert db.get(where('char') == 'a')['int'] == 0.5
++
++
++def test_divide_float(db):
++    db.update(divide('int', 0.5), where('char') == 'a')
++    assert db.get(where('char') == 'a')['int'] == 2.0
+diff --git a/tinydb/operations.py b/tinydb/operations.py
+index 7101a23..1b74088 100644
+--- a/tinydb/operations.py
++++ b/tinydb/operations.py
+@@ -43,6 +43,26 @@ def subtract(field: str, n: Union[int, float]) -> Callable[[MutableMapping], Non
+     return transform
+ 
+ 
++def multiply(field: str, n: Union[int, float]) -> Callable[[MutableMapping], None]:
++    """
++    Multiply a given field in the document by ``n``.
++    """
++    def transform(doc: MutableMapping):
++        doc[field] *= n
++
++    return transform
++
++
++def divide(field: str, n: Union[int, float]) -> Callable[[MutableMapping], None]:
++    """
++    Divide a given field in the document by ``n``.
++    """
++    def transform(doc: MutableMapping):
++        doc[field] /= n
++
++    return transform
++
++
+ def set(field: str, val: Any) -> Callable[[MutableMapping], None]:
+     """
+     Set a given field to ``val``.

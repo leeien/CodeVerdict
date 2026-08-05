@@ -1,0 +1,99 @@
+diff --git a/rich/markdown.py b/rich/markdown.py
+index abbbb07d..a0614040 100644
+--- a/rich/markdown.py
++++ b/rich/markdown.py
+@@ -381,8 +381,40 @@ class ListItem(TextElement):
+         self.elements.append(child)
+         return False
+ 
++    def _get_checkbox(self) -> tuple[str, Renderables] | None:
++        renderables = list(self.elements._renderables)
++        if renderables and isinstance(renderables[0], Paragraph):
++            first_para = renderables[0]
++            plain = first_para.text.plain
++            if len(plain) >= 4 and plain[0] == "[" and plain[2] == "]" and plain[3] == " ":
++                marker = plain[1]
++                if marker == " ":
++                    symbol = "☐"
++                elif marker in ("x", "X"):
++                    symbol = "☑"
++                else:
++                    return None
++                new_para = Paragraph(justify=first_para.justify)
++                new_para.text = Text("", justify=first_para.justify)
++                new_para.text.append_text(first_para.text[4:])
++                return symbol, Renderables([new_para] + renderables[1:])
++        return None
++
+     def render_bullet(self, console: Console, options: ConsoleOptions) -> RenderResult:
+         render_options = options.update(width=options.max_width - 3)
++        checkbox = self._get_checkbox()
++        if checkbox is not None:
++            symbol, elements = checkbox
++            bullet_style = console.get_style("markdown.item.bullet", default="none")
++            lines = console.render_lines(elements, render_options, style=self.style)
++            bullet = Segment(f" {symbol} ", bullet_style)
++            padding = Segment(" " * 3, bullet_style)
++            new_line = Segment("\n")
++            for first, line in loop_first(lines):
++                yield bullet if first else padding
++                yield from line
++                yield new_line
++            return
+         lines = console.render_lines(self.elements, render_options, style=self.style)
+         bullet_style = console.get_style("markdown.item.bullet", default="none")
+ 
+diff --git a/tests/test_markdown.py b/tests/test_markdown.py
+index c461c769..718f22cf 100644
+--- a/tests/test_markdown.py
++++ b/tests/test_markdown.py
+@@ -215,6 +215,49 @@ def test_inline_code_in_table_cells() -> None:
+     assert result == expected
+ 
+ 
++def test_checkbox_unchecked() -> None:
++    result = render(Markdown("- [ ] Unchecked task"))
++    assert "☐" in result
++    assert "Unchecked task" in result
++    assert "•" not in result
++
++
++def test_checkbox_checked_lowercase() -> None:
++    result = render(Markdown("- [x] Checked lowercase"))
++    assert "☑" in result
++    assert "Checked lowercase" in result
++    assert "•" not in result
++
++
++def test_checkbox_checked_uppercase() -> None:
++    result = render(Markdown("- [X] Checked uppercase"))
++    assert "☑" in result
++    assert "Checked uppercase" in result
++    assert "•" not in result
++
++
++def test_checkbox_plain_bullet_unchanged() -> None:
++    result = render(Markdown("- Regular task"))
++    assert "•" in result
++    assert "☐" not in result
++    assert "☑" not in result
++
++
++def test_checkbox_non_checkbox_bracket() -> None:
++    result = render(Markdown("- [info] not a checkbox"))
++    assert "•" in result
++    assert "[info]" in result
++    assert "☐" not in result
++    assert "☑" not in result
++
++
++def test_checkbox_idempotent() -> None:
++    md = "- [ ] Task\n- [x] Done\n- Regular"
++    r1 = render(Markdown(md))
++    r2 = render(Markdown(md))
++    assert r1 == r2
++
++
+ if __name__ == "__main__":
+     markdown = Markdown(MARKDOWN)
+     rendered = render(markdown)

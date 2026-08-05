@@ -1,0 +1,1 @@
+Right now, when updating documents in the database, I can add a number to a field or subtract a number from a field. I also want to be able to multiply a field by a number and divide a field by a number in the same way. Please add this capability, with tests.

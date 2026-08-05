@@ -1,0 +1,13 @@
+I captured the console output of a program that had been run on a Windows machine, and
+then asked the library to turn that captured output into displayable text so I could
+show it in my own app.
+
+Almost all of the content disappeared. Out of three lines of captured output, only the
+last line survived - the earlier lines came out as empty blank lines, and their text was
+nowhere to be found. The exact same content captured from a program on Linux or macOS
+displays perfectly, with every line intact.
+
+Text captured on Windows should display the same as text captured anywhere else. Nothing
+should be silently thrown away because of where the output came from.
+
+Please fix this, with regression tests.

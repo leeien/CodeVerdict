@@ -1,0 +1,15 @@
+In my app I have a general kind of button, and I also have a more specialised button that is
+built on top of the general one (it's a more specific version of it). I wrote a handler that is
+supposed to respond only when the specialised button is pressed.
+
+The problem is that this handler also fires when a plain general button is pressed, even though
+that button is not the specialised kind at all. So an action meant only for the specialised
+button runs for ordinary buttons too.
+
+A handler that is set up to respond only to the more specific button should fire only for that
+specific button, not for its more general parent. (The reverse is fine and expected: a handler
+listening for the general button should still respond when the specialised one is pressed, since
+the specialised one is a kind of general button.)
+
+Please fix this so specific-button handlers don't get triggered by the general button, with
+regression tests.

@@ -1,0 +1,11 @@
+My app shows a table where columns automatically widen to fit their widest piece of
+content. This part works correctly.
+
+The problem shows up when I remove a row that contained the widest value in a column.
+I expect the column to shrink back down to fit whatever content remains, but instead
+it stays stuck at the old, wider size forever - even though nothing left in that
+column needs that much space anymore.
+
+Removing a row should make auto-sized columns re-check their content and shrink back
+down when the wide value that was forcing their width is gone. Please fix this, with
+regression tests.

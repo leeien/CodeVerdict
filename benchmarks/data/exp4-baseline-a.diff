@@ -1,0 +1,124 @@
+diff --git a/src/textual/widgets/_data_table.py b/src/textual/widgets/_data_table.py
+index dd5f9c6..7ce9857 100644
+--- a/src/textual/widgets/_data_table.py
++++ b/src/textual/widgets/_data_table.py
+@@ -2609,6 +2609,16 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
+             The `DataTable` instance.
+         """
+ 
++        def _default_sort_key(value: Any) -> Any:
++            """Extract a comparable sort key from a cell value.
++
++            Rich Text objects don't support ordering, so we use their plain
++            string representation instead of the object itself.
++            """
++            if isinstance(value, Text):
++                return value.plain
++            return value
++
+         def key_wrapper(row: tuple[RowKey, dict[ColumnKey | str, CellType]]) -> Any:
+             _, row_data = row
+             if columns:
+@@ -2617,7 +2627,9 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
+                 result = tuple(row_data.values())
+             if key is not None:
+                 return key(result)
+-            return result
++            if isinstance(result, tuple):
++                return tuple(_default_sort_key(v) for v in result)
++            return _default_sort_key(result)
+ 
+         ordered_rows = sorted(
+             self._data.items(),
+diff --git a/tests/test_data_table.py b/tests/test_data_table.py
+index 6750c5d..4bf9fa9 100644
+--- a/tests/test_data_table.py
++++ b/tests/test_data_table.py
+@@ -1343,6 +1343,87 @@ async def test_sort_by_function_sum():
+             assert table.get_row_at(i) == row
+ 
+ 
++async def test_sort_styled_text_single_column():
++    """Sorting a column whose cells are Rich Text objects must not crash and
++    must sort by the visible (plain) text, ignoring markup/colour."""
++    app = DataTableApp()
++    async with app.run_test():
++        table = app.query_one(DataTable)
++        col = table.add_column("Name")
++        table.add_row(Text("Charlie", style="bold red"))
++        table.add_row(Text("Alice", style="green"))
++        table.add_row(Text("Bob", style="blue underline"))
++
++        table.sort(col)
++
++        assert table.get_row_at(0)[0].plain == "Alice"
++        assert table.get_row_at(1)[0].plain == "Bob"
++        assert table.get_row_at(2)[0].plain == "Charlie"
++
++        table.sort(col, reverse=True)
++
++        assert table.get_row_at(0)[0].plain == "Charlie"
++        assert table.get_row_at(1)[0].plain == "Bob"
++        assert table.get_row_at(2)[0].plain == "Alice"
++
++
++async def test_sort_styled_text_all_columns():
++    """Sorting with no column argument across all columns must not crash when
++    any column contains Rich Text objects."""
++    app = DataTableApp()
++    async with app.run_test():
++        table = app.query_one(DataTable)
++        a, b = table.add_columns("A", "B")
++        table.add_row(Text("banana", style="bold"), 2)
++        table.add_row(Text("apple", style="red"), 5)
++        table.add_row(Text("cherry", style="italic"), 1)
++
++        table.sort()
++
++        assert table.get_row_at(0)[0].plain == "apple"
++        assert table.get_row_at(1)[0].plain == "banana"
++        assert table.get_row_at(2)[0].plain == "cherry"
++
++
++async def test_sort_styled_text_multiple_columns():
++    """Sorting by multiple columns where some hold Rich Text must not crash."""
++    app = DataTableApp()
++    async with app.run_test():
++        table = app.query_one(DataTable)
++        a, b = table.add_columns("A", "B")
++        table.add_row(Text("x", style="bold"), Text("beta", style="red"))
++        table.add_row(Text("x", style="italic"), Text("alpha", style="green"))
++        table.add_row(Text("y", style="underline"), Text("gamma", style="blue"))
++
++        table.sort(a, b)
++
++        assert table.get_row_at(0)[1].plain == "alpha"
++        assert table.get_row_at(1)[1].plain == "beta"
++        assert table.get_row_at(2)[1].plain == "gamma"
++
++
++async def test_sort_mixed_plain_and_styled():
++    """A table with a mix of plain strings and Rich Text in the same column
++    must sort without crashing, treating both by their visible text."""
++    app = DataTableApp()
++    async with app.run_test():
++        table = app.query_one(DataTable)
++        col = table.add_column("Value")
++        table.add_row("zebra")
++        table.add_row(Text("mango", style="bold"))
++        table.add_row("apple")
++
++        table.sort(col)
++
++        first = table.get_row_at(0)[0]
++        second = table.get_row_at(1)[0]
++        third = table.get_row_at(2)[0]
++        # plain strings come back as-is; Text comes back as a Text object
++        assert (first if isinstance(first, str) else first.plain) == "apple"
++        assert (second if isinstance(second, str) else second.plain) == "mango"
++        assert (third if isinstance(third, str) else third.plain) == "zebra"
++
++
+ @pytest.mark.parametrize(
+     ["cell", "height"],
+     [

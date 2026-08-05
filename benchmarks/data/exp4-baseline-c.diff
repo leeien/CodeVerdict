@@ -1,0 +1,143 @@
+diff --git a/src/textual/strip.py b/src/textual/strip.py
+index 72ca434..01657e3 100644
+--- a/src/textual/strip.py
++++ b/src/textual/strip.py
+@@ -16,7 +16,7 @@ from rich.color import ColorSystem
+ from rich.console import Console, ConsoleOptions, RenderResult
+ from rich.measure import Measurement
+ from rich.segment import Segment
+-from rich.style import Style, StyleType
++from rich.style import Style, StyleType, _id_generator as _rich_id_generator
+ 
+ from textual._segment_tools import index_to_cell_position, line_pad
+ from textual.cache import FIFOCache
+@@ -27,6 +27,30 @@ from textual.filter import LineFilter
+ SGR_STYLES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "21", "51", "52", "53"]
+ 
+ 
++def _fresh_link_id(style: Style) -> Style:
++    """Return a copy of a Rich Style with a new unique _link_id.
++
++    Rich's Style.__add__ is lru_cached, so two segments built from the same
++    input styles share the same combined Style object and therefore the same
++    _link_id.  This causes style_links() to highlight *all* such segments
++    whenever any one of them is hovered.  Cloning with a fresh counter value
++    ensures every @click segment is independently identifiable.
++    """
++    fresh = style.__class__.__new__(style.__class__)
++    fresh._color = style._color
++    fresh._bgcolor = style._bgcolor
++    fresh._attributes = style._attributes
++    fresh._set_attributes = style._set_attributes
++    fresh._link = style._link
++    fresh._meta = style._meta
++    fresh._link_id = f"{next(_rich_id_generator)}{hash(style._meta)}"
++    fresh._ansi = None
++    fresh._style_definition = None
++    fresh._hash = None
++    fresh._null = style._null
++    return fresh
++
++
+ def get_line_length(segments: Iterable[Segment]) -> int:
+     """Get the line length (total length of all segments).
+ 
+@@ -644,7 +668,11 @@ class Strip:
+                     (
+                         style
+                         if style._meta is None
+-                        else (style + link_style if "@click" in style.meta else style)
++                        else (
++                            _fresh_link_id(style + link_style)
++                            if "@click" in style.meta
++                            else style
++                        )
+                     ),
+                     control,
+                 )
+diff --git a/tests/test_strip.py b/tests/test_strip.py
+index e9364d8..206a174 100644
+--- a/tests/test_strip.py
++++ b/tests/test_strip.py
+@@ -205,3 +205,81 @@ def test_render_with_missing_style() -> None:
+     """Test that render with segments that omit a style still work."""
+     strip = Strip([Segment("Hello")])
+     assert strip.render(Console()) == "Hello"
++
++
++def test_apply_link_style_gives_unique_link_ids() -> None:
++    """Regression: two @click segments with the same action must get different _link_ids.
++
++    Rich's Style.__add__ is lru_cached, so two segments built from the same
++    Style objects share the same combined object and thus the same _link_id.
++    _apply_link_style must assign a fresh _link_id to each segment so that
++    hovering one never highlights the other.
++    """
++    click_style = Style.on(click="app.foo")
++    base_style = Style(underline=True)
++    # Both segments share the same cached combined style → same _link_id before fix.
++    shared = click_style + base_style
++    strip = Strip([Segment("foo", shared), Segment("bar", shared)])
++
++    link_style = Style(italic=True)
++    result = strip._apply_link_style(link_style)
++    segs = list(result)
++
++    foo_id = segs[0].style._link_id
++    bar_id = segs[1].style._link_id
++    assert foo_id != bar_id, (
++        "_apply_link_style must assign unique _link_ids to each @click segment"
++    )
++
++
++def test_apply_link_style_hover_independence() -> None:
++    """Regression: style_links after _apply_link_style must only highlight the hovered segment.
++
++    When two @click segments have the same underlying action, hovering one
++    must not highlight the other.
++    """
++    click_style = Style.on(click="app.foo")
++    shared = click_style + Style(underline=True)
++    strip = Strip([Segment("foo", shared), Segment("bar", shared)])
++
++    link_style = Style(italic=True)
++    result = strip._apply_link_style(link_style)
++    segs = list(result)
++
++    foo_id = segs[0].style._link_id
++    bar_id = segs[1].style._link_id
++
++    hover_style = Style(bold=True)
++
++    # Hover over "foo" — only foo should become bold
++    foo_hover = result.style_links(foo_id, hover_style)
++    foo_segs = list(foo_hover)
++    assert foo_segs[0].style.bold, "hovered segment should be highlighted"
++    assert not foo_segs[1].style.bold, "non-hovered same-action segment must not be highlighted"
++
++    # Hover over "bar" — only bar should become bold
++    bar_hover = result.style_links(bar_id, hover_style)
++    bar_segs = list(bar_hover)
++    assert not bar_segs[0].style.bold, "non-hovered same-action segment must not be highlighted"
++    assert bar_segs[1].style.bold, "hovered segment should be highlighted"
++
++
++def test_apply_link_style_different_actions_stay_independent() -> None:
++    """Segments with different @click actions must remain independently identifiable."""
++    style_foo = Style.on(click="app.foo")
++    style_bar = Style.on(click="app.bar")
++    strip = Strip([Segment("foo", style_foo), Segment("bar", style_bar)])
++
++    link_style = Style(italic=True)
++    result = strip._apply_link_style(link_style)
++    segs = list(result)
++
++    foo_id = segs[0].style._link_id
++    bar_id = segs[1].style._link_id
++    assert foo_id != bar_id
++
++    hover_style = Style(bold=True)
++    foo_hover = result.style_links(foo_id, hover_style)
++    foo_segs = list(foo_hover)
++    assert foo_segs[0].style.bold
++    assert not foo_segs[1].style.bold

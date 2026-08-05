@@ -1,0 +1,125 @@
+diff --git a/src/click/_termui_impl.py b/src/click/_termui_impl.py
+index fadae94..09837e9 100644
+--- a/src/click/_termui_impl.py
++++ b/src/click/_termui_impl.py
+@@ -67,6 +67,7 @@ class ProgressBar(t.Generic[V]):
+         show_eta: bool = True,
+         show_percent: bool | None = None,
+         show_pos: bool = False,
++        show_speed: bool = False,
+         item_show_func: t.Callable[[V | None], str | None] | None = None,
+         label: str | None = None,
+         file: t.TextIO | None = None,
+@@ -82,6 +83,7 @@ class ProgressBar(t.Generic[V]):
+         self.show_eta = show_eta
+         self.show_percent = show_percent
+         self.show_pos = show_pos
++        self.show_speed = show_speed
+         self.item_show_func = item_show_func
+         self.label: str = label or ""
+ 
+@@ -243,6 +245,12 @@ class ProgressBar(t.Generic[V]):
+             item_info = self.item_show_func(self.current_item)
+             if item_info is not None:
+                 info_bits.append(item_info)
++        if self.show_speed:
++            elapsed = time.time() - self.start
++            if elapsed > 0 and self.pos > 0:
++                info_bits.append(f"{self.pos / elapsed:.2f} it/s")
++            else:
++                info_bits.append("? it/s")
+ 
+         return (
+             self.bar_template
+diff --git a/src/click/termui.py b/src/click/termui.py
+index 4bd74ed..173ad67 100644
+--- a/src/click/termui.py
++++ b/src/click/termui.py
+@@ -364,6 +364,7 @@ def progressbar(
+     show_eta: bool = True,
+     show_percent: bool | None = None,
+     show_pos: bool = False,
++    show_speed: bool = False,
+     fill_char: str = "#",
+     empty_char: str = "-",
+     bar_template: str = "%(label)s  [%(bar)s]  %(info)s",
+@@ -384,6 +385,7 @@ def progressbar(
+     show_eta: bool = True,
+     show_percent: bool | None = None,
+     show_pos: bool = False,
++    show_speed: bool = False,
+     item_show_func: t.Callable[[V | None], str | None] | None = None,
+     fill_char: str = "#",
+     empty_char: str = "-",
+@@ -404,6 +406,7 @@ def progressbar(
+     show_eta: bool = True,
+     show_percent: bool | None = None,
+     show_pos: bool = False,
++    show_speed: bool = False,
+     item_show_func: t.Callable[[V | None], str | None] | None = None,
+     fill_char: str = "#",
+     empty_char: str = "-",
+@@ -542,6 +545,7 @@ def progressbar(
+         show_eta=show_eta,
+         show_percent=show_percent,
+         show_pos=show_pos,
++        show_speed=show_speed,
+         item_show_func=item_show_func,
+         fill_char=fill_char,
+         empty_char=empty_char,
+diff --git a/tests/test_termui.py b/tests/test_termui.py
+index 98e2577..3d33216 100644
+--- a/tests/test_termui.py
++++ b/tests/test_termui.py
+@@ -2,6 +2,7 @@ import contextlib
+ import gc
+ import io
+ import platform
++import re
+ import shlex
+ import shutil
+ import sys
+@@ -340,6 +341,43 @@ def test_progressbar_update_with_item_show_func(runner, monkeypatch):
+     assert "Custom 4" in lines[2]
+ 
+ 
++def test_progressbar_speed_hidden(runner):
++    with _create_progress(5, show_speed=False) as progress:
++        progress.pos = 3
++        assert "it/s" not in progress.format_progress_line()
++
++
++def test_progressbar_speed_shown(runner, monkeypatch):
++    fake_clock = FakeClock()
++    monkeypatch.setattr(time, "time", fake_clock.time)
++
++    with _create_progress(5, show_speed=True) as progress:
++        progress.pos = 3
++        fake_clock.advance_time(3)
++        line = progress.format_progress_line()
++        assert re.search(r"\d+\.\d{2} it/s", line)
++
++
++def test_progressbar_speed_before_first_item(runner):
++    with _create_progress(5, show_speed=True) as progress:
++        assert "? it/s" in progress.format_progress_line()
++
++
++def test_progressbar_speed_end_to_end(runner, monkeypatch):
++    fake_clock = FakeClock()
++
++    @click.command()
++    def cli():
++        with click.progressbar(range(3), show_speed=True) as progress:
++            for _ in progress:
++                fake_clock.advance_time()
++
++    monkeypatch.setattr(time, "time", fake_clock.time)
++    monkeypatch.setattr(click._termui_impl, "isatty", lambda _: True)
++    output = runner.invoke(cli, []).output
++    assert re.search(r"\d+\.\d{2} it/s", output)
++
++
+ def test_progress_bar_update_min_steps(runner):
+     bar = _create_progress(update_min_steps=5)
+     bar.update(3)

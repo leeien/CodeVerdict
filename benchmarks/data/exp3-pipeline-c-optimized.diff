@@ -1,0 +1,165 @@
+diff --git a/rich/console.py b/rich/console.py
+index 0bdce769..eac9c623 100644
+--- a/rich/console.py
++++ b/rich/console.py
+@@ -2138,18 +2138,59 @@ class Console:
+         not_terminal = not self.is_terminal
+         if self.no_color and color_system:
+             buffer = Segment.remove_color(buffer)
++
++        current_link: Optional[str] = None
++        current_link_id: str = ""
++        link_buffer: List[str] = []
++
++        def flush_link() -> None:
++            nonlocal current_link, current_link_id
++            if current_link and not legacy_windows:
++                link_text = "".join(link_buffer)
++                append(
++                    f"\x1b]8;id={current_link_id};{current_link}\x1b\\{link_text}\x1b]8;;\x1b\\"
++                )
++            else:
++                append("".join(link_buffer))
++            link_buffer.clear()
++            current_link = None
++            current_link_id = ""
++
+         for text, style, control in buffer:
+             if style:
+-                append(
+-                    style.render(
+-                        text,
+-                        color_system=color_system,
+-                        legacy_windows=legacy_windows,
++                seg_link = style.link
++                if seg_link:
++                    if seg_link != current_link:
++                        if current_link is not None:
++                            flush_link()
++                        current_link = seg_link
++                        current_link_id = style.link_id
++                    link_buffer.append(
++                        style.render(
++                            text,
++                            color_system=color_system,
++                            legacy_windows=legacy_windows,
++                            links=False,
++                        )
++                    )
++                else:
++                    if current_link is not None:
++                        flush_link()
++                    append(
++                        style.render(
++                            text,
++                            color_system=color_system,
++                            legacy_windows=legacy_windows,
++                        )
+                     )
+-                )
+             elif not (not_terminal and control):
++                if current_link is not None:
++                    flush_link()
+                 append(text)
+ 
++        if current_link is not None:
++            flush_link()
++
+         rendered = "".join(output)
+         return rendered
+ 
+diff --git a/rich/style.py b/rich/style.py
+index 3806a8c4..5fa05c8c 100644
+--- a/rich/style.py
++++ b/rich/style.py
+@@ -697,12 +697,14 @@ class Style:
+         *,
+         color_system: Optional[ColorSystem] = ColorSystem.TRUECOLOR,
+         legacy_windows: bool = False,
++        links: bool = True,
+     ) -> str:
+         """Render the ANSI codes for the style.
+ 
+         Args:
+             text (str, optional): A string to style. Defaults to "".
+             color_system (Optional[ColorSystem], optional): Color system to render to. Defaults to ColorSystem.TRUECOLOR.
++            links (bool, optional): Render OSC 8 hyperlink sequences. Defaults to True.
+ 
+         Returns:
+             str: A string containing ANSI style codes.
+@@ -711,7 +713,7 @@ class Style:
+             return text
+         attrs = self._ansi or self._make_ansi_codes(color_system)
+         rendered = f"\x1b[{attrs}m{text}\x1b[0m" if attrs else text
+-        if self._link and not legacy_windows:
++        if links and self._link and not legacy_windows:
+             rendered = (
+                 f"\x1b]8;id={self._link_id};{self._link}\x1b\\{rendered}\x1b]8;;\x1b\\"
+             )
+diff --git a/tests/test_console.py b/tests/test_console.py
+index e52c1b36..b4960228 100644
+--- a/tests/test_console.py
++++ b/tests/test_console.py
+@@ -1133,3 +1133,41 @@ def test_tty_compatible() -> None:
+     assert not console.is_terminal
+     # Should not have auto-detected
+     assert not console.file.called_isatty
++
++
++def test_link_coalescing_in_render_buffer():
++    """Consecutive segments with identical link values are wrapped in a single OSC 8 pair."""
++    console = Console(force_terminal=True, width=80)
++    with console.capture() as capture:
++        console.print("[link=https://example.org]Hello [bold]World[/bold][/link]")
++    result = capture.get()
++    # Should contain exactly one OSC 8 open (id=...;url) and one OSC 8 close
++    osc8_open_count = result.count("\x1b]8;id=")
++    osc8_close_count = result.count("\x1b]8;;\x1b\\")
++    assert osc8_open_count == 1, f"Expected 1 OSC 8 open, got {osc8_open_count}: {result!r}"
++    assert osc8_close_count == 1, f"Expected 1 OSC 8 close, got {osc8_close_count}: {result!r}"
++    assert "Hello " in result
++    assert "World" in result
++
++
++def test_multiple_links_not_coalesced():
++    """Distinct links on the same line remain separate OSC 8 pairs."""
++    console = Console(force_terminal=True, width=80)
++    with console.capture() as capture:
++        console.print(
++            "[link=https://example.org]First[/link] [link=https://other.org]Second[/link]"
++        )
++    result = capture.get()
++    assert result.count("\x1b]8;id=") == 2
++    assert result.count("\x1b]8;;\x1b\\") == 2
++
++
++def test_plain_link_unchanged():
++    """A plain link (no emphasis) still renders correctly with one OSC 8 pair."""
++    console = Console(force_terminal=True, width=80)
++    with console.capture() as capture:
++        console.print("[link=https://example.org]Click here[/link]")
++    result = capture.get()
++    assert result.count("\x1b]8;id=") == 1
++    assert result.count("\x1b]8;;\x1b\\") == 1
++    assert "Click here" in result
+diff --git a/tests/test_style.py b/tests/test_style.py
+index 84a65a67..feda6ad9 100644
+--- a/tests/test_style.py
++++ b/tests/test_style.py
+@@ -253,6 +253,16 @@ def test_clear_meta_and_links():
+     assert not clear_style.italic
+ 
+ 
++def test_render_links_false():
++    style = Style(color="red", link="https://example.org")
++    rendered = style.render("foo", links=False)
++    assert rendered == "\x1b[31mfoo\x1b[0m"
++    assert "\x1b]8" not in rendered
++
++    rendered_with_links = style.render("foo")
++    assert "\x1b]8" in rendered_with_links
++
++
+ def test_clear_meta_and_links_clears_hash():
+     """Regression test for https://github.com/Textualize/rich/issues/2942."""
+ 

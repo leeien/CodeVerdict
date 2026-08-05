@@ -1,0 +1,125 @@
+diff --git a/src/textual/widgets/_data_table.py b/src/textual/widgets/_data_table.py
+index dd5f9c6..011a3ed 100644
+--- a/src/textual/widgets/_data_table.py
++++ b/src/textual/widgets/_data_table.py
+@@ -782,6 +782,8 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
+         """Tracking newly added rows to be used in calculation of dimensions on idle."""
+         self._updated_cells: set[CellKey] = set()
+         """Track which cells were updated, so that we can refresh them once on idle."""
++        self._rows_removed: bool = False
++        """Set when rows have been removed, so column widths are recalculated from scratch on idle."""
+ 
+         self._show_hover_cursor = False
+         """Used to hide the mouse hover cursor when the user uses the keyboard."""
+@@ -1803,6 +1805,7 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
+             raise RowDoesNotExist(f"Row key {row_key!r} is not valid.")
+ 
+         self._require_update_dimensions = True
++        self._rows_removed = True
+         self.check_idle()
+ 
+         index_to_delete = self._row_locations.get(row_key)
+@@ -1888,6 +1891,17 @@ class DataTable(ScrollView, Generic[CellType], can_focus=True):
+             self._require_update_dimensions = False
+             new_rows = self._new_rows.copy()
+             self._new_rows.clear()
++            if self._rows_removed:
++                # Rows were deleted, so the cached content_width on each auto-width
++                # column may be larger than any remaining cell. Reset to label widths
++                # and recompute from all surviving rows.
++                self._rows_removed = False
++                console = self.app.console
++                for column in self.columns.values():
++                    if column.auto_width:
++                        column.content_width = measure(console, column.label, 1)
++                self._label_column.content_width = 0
++                new_rows = set(self.rows.keys())
+             self._update_dimensions(new_rows)
+ 
+     def refresh_coordinate(self, coordinate: Coordinate) -> Self:
+diff --git a/tests/test_data_table.py b/tests/test_data_table.py
+index 6750c5d..60d537f 100644
+--- a/tests/test_data_table.py
++++ b/tests/test_data_table.py
+@@ -354,6 +354,81 @@ async def test_remove_row_and_update():
+         await pilot.pause()
+ 
+ 
++async def test_remove_row_shrinks_auto_column_width():
++    """Removing a row that held the widest value in an auto-width column
++    should cause the column to shrink back to fit the remaining content."""
++    app = DataTableApp()
++    async with app.run_test() as pilot:
++        table: DataTable = app.query_one(DataTable)
++        (col,) = table.add_columns("col")
++        table.add_row("short", key="r1")
++        table.add_row("a much longer value", key="r2")
++        await pilot.pause()
++
++        assert table.columns[col].content_width == len("a much longer value")
++
++        table.remove_row("r2")
++        await pilot.pause()
++
++        assert table.columns[col].content_width == len("short")
++
++
++async def test_remove_row_shrinks_column_to_label_width_when_no_rows_remain():
++    """When all data rows are removed the auto-width column should fall back
++    to the label width, not stay at the previous maximum content width."""
++    app = DataTableApp()
++    async with app.run_test() as pilot:
++        table: DataTable = app.query_one(DataTable)
++        (col,) = table.add_columns("lbl")
++        table.add_row("very wide content here", key="r1")
++        await pilot.pause()
++
++        assert table.columns[col].content_width == len("very wide content here")
++
++        table.remove_row("r1")
++        await pilot.pause()
++
++        assert table.columns[col].content_width == len("lbl")
++
++
++async def test_remove_row_keeps_width_when_other_row_is_still_widest():
++    """Removing a narrow row should not shrink the column when another
++    row still has the maximum content width."""
++    app = DataTableApp()
++    async with app.run_test() as pilot:
++        table: DataTable = app.query_one(DataTable)
++        (col,) = table.add_columns("col")
++        table.add_row("hi", key="narrow")
++        table.add_row("a much longer value", key="wide")
++        await pilot.pause()
++
++        assert table.columns[col].content_width == len("a much longer value")
++
++        table.remove_row("narrow")
++        await pilot.pause()
++
++        assert table.columns[col].content_width == len("a much longer value")
++
++
++async def test_remove_row_column_width_with_row_label():
++    """Removing the row that forced the label column's maximum width
++    should shrink the label column's content_width."""
++    app = DataTableApp()
++    async with app.run_test() as pilot:
++        table: DataTable = app.query_one(DataTable)
++        table.add_column("col")
++        table.add_row("v1", label="short", key="r1")
++        table.add_row("v2", label="a much longer label", key="r2")
++        await pilot.pause()
++
++        assert table._label_column.content_width == len("a much longer label")
++
++        table.remove_row("r2")
++        await pilot.pause()
++
++        assert table._label_column.content_width == len("short")
++
++
+ async def test_remove_column():
+     app = DataTableApp()
+     async with app.run_test():

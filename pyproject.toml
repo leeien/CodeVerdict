@@ -1,0 +1,143 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codeverdict"
+version = "0.1.0"
+description = "A terminal-first coding agent whose changes are reviewed by a jury of independent LLM judges, and which localizes work through a persistent code graph with semantic search instead of burning tokens rediscovering the repo."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "leeien" }]
+keywords = [
+  "llm", "agents", "cli", "llm-as-a-judge", "ensemble-judge", "code-review",
+  "code-graph", "semantic-search", "rag", "code-generation", "developer-tools",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Code Generators",
+]
+
+dependencies = [
+  # --- Terminal client (the default surface) ---
+  # rich renders the transcript, tables and the live pipeline view;
+  # prompt_toolkit owns input (history, completion, real line editing on every
+  # platform); textual provides the three full-screen panels — review, settings
+  # and the jury roster — that don't fit in a scrolling conversation.
+  "rich>=13.7",
+  "prompt_toolkit>=3.0.43",
+  "textual>=0.79",
+  # --- The agents' loopback index endpoint ---
+  # Not a web app: the Dev and jury agents run as separate processes and the
+  # vector store is single-writer, so they query the index over loopback
+  # instead of opening it a second time.
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  # --- Shared ---
+  "sqlmodel>=0.0.16",
+  "pydantic>=2.6",
+  "pydantic-settings>=2.2",
+  "httpx>=0.27",
+  # Native Anthropic Messages API (the `anthropic` provider) + Fernet
+  # encryption-at-rest for API keys saved from Settings.
+  "anthropic>=0.40",
+  "cryptography>=42",
+]
+
+[project.optional-dependencies]
+# The knowledge base's primary localization + structural layer is the external
+# `codebase-memory-mcp` static binary (a persistent code graph: definitions,
+# call edges, routes; 158 languages via bundled tree-sitter grammars and
+# bundled embeddings). It is not a Python dependency — install it separately
+# (npm / PyPI / Homebrew / Scoop / a GitHub release) so the pipeline can shell
+# out to it. Without it the KB degrades to the symbol-map + ripgrep tier below.
+#
+# ripgrep is likewise an external binary, not a Python dependency: it is the
+# lexical channel every agent's `grep` tool and the retrieval pipeline's
+# refinement stage run on. Install it from your package manager
+# (`apt install ripgrep`, `brew install ripgrep`, `cargo install ripgrep`).
+# Without it those calls fall back to `git grep` — functional, but tracked files
+# only. Definition searches still apply language-aware patterns and file filters,
+# but the fallback covers tracked files and has no .gitignore-aware directory walk.
+#
+# The [semantic] extra adds the local dense-embedding channel: real contextual
+# embeddings (fastembed, ONNX/CPU, no Docker/API) over the graph's nodes, stored
+# in an embedded Qdrant collection and fused with BM25 via RRF. Without it,
+# retrieval is BM25-only.
+semantic = [
+  "fastembed>=0.3",
+  "qdrant-client>=1.9",
+]
+#
+# Exact symbol extraction for the fallback tier (JS/TS/Go/Rust/Java/Ruby) via
+# real parse trees (grammars lazy-loaded per language). Without it the language
+# layer falls back to the built-in regex extractors — Python is always exact
+# via stdlib ast either way.
+treesitter = [
+  "tree-sitter>=0.23",
+  "tree-sitter-language-pack>=0.7",
+]
+# A local cross-encoder as the strongest reranking tier. The default
+# deterministic reranker is free and always available, so this is genuinely
+# optional — it is a real model in memory, and this pipeline runs on machines
+# where that matters.
+rerank = [
+  "fastembed>=0.3",
+]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/leeien/CodeVerdict"
+Documentation = "https://github.com/leeien/CodeVerdict/tree/main/docs"
+Issues = "https://github.com/leeien/CodeVerdict/issues"
+
+[project.scripts]
+codeverdict = "app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["templates/*.html", "static/*"]
+
+# ── Lint ──────────────────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".workspace", ".knowledge", "benchmarks"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+  "E501",   # long lines are covered by the formatter, not worth failing CI over
+  "B008",   # FastAPI's Depends() in defaults is the framework's own idiom
+  "SIM105", # contextlib.suppress is not always clearer than try/except: pass
+  "E741",   # single-letter loop vars (l, e) read fine in the short scopes here
+  "B904",   # explicit `raise ... from` — the re-raised HTTPExceptions are intentional
+  "UP042",  # str-Enum migration; the plain Enum + .value pattern is used deliberately
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["backend"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+  "ignore::DeprecationWarning",
+]
+markers = [
+  "slow: tests that hit the filesystem or spawn subprocesses",
+]

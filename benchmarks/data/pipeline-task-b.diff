@@ -1,0 +1,117 @@
+diff --git a/tests/test_operations.py b/tests/test_operations.py
+index 3a6f814..a0c11ba 100644
+--- a/tests/test_operations.py
++++ b/tests/test_operations.py
+@@ -1,5 +1,6 @@
+-from tinydb import where
++from tinydb import TinyDB, where
+ from tinydb.operations import delete, increment, decrement, add, subtract, set
++from tinydb.storages import MemoryStorage
+ 
+ 
+ def test_delete(db):
+@@ -35,3 +36,51 @@ def test_increment(db):
+ def test_decrement(db):
+     db.update(decrement('int'), where('char') == 'a')
+     assert db.get(where('char') == 'a')['int'] == 0
++
++
++def test_add_missing_field():
++    db = TinyDB(storage=MemoryStorage)
++    db.insert({'val': 10})
++    db.insert({'other': 'no_val'})
++    db.update(add('val', 5))
++    docs = db.all()
++    with_field = [d for d in docs if 'val' in d]
++    without_field = [d for d in docs if 'val' not in d]
++    assert len(with_field) == 1 and with_field[0]['val'] == 15
++    assert len(without_field) == 1 and without_field[0]['other'] == 'no_val'
++
++
++def test_subtract_missing_field():
++    db = TinyDB(storage=MemoryStorage)
++    db.insert({'val': 10})
++    db.insert({'other': 'no_val'})
++    db.update(subtract('val', 3))
++    docs = db.all()
++    with_field = [d for d in docs if 'val' in d]
++    without_field = [d for d in docs if 'val' not in d]
++    assert len(with_field) == 1 and with_field[0]['val'] == 7
++    assert len(without_field) == 1 and without_field[0]['other'] == 'no_val'
++
++
++def test_increment_missing_field():
++    db = TinyDB(storage=MemoryStorage)
++    db.insert({'val': 10})
++    db.insert({'other': 'no_val'})
++    db.update(increment('val'))
++    docs = db.all()
++    with_field = [d for d in docs if 'val' in d]
++    without_field = [d for d in docs if 'val' not in d]
++    assert len(with_field) == 1 and with_field[0]['val'] == 11
++    assert len(without_field) == 1 and without_field[0]['other'] == 'no_val'
++
++
++def test_decrement_missing_field():
++    db = TinyDB(storage=MemoryStorage)
++    db.insert({'val': 10})
++    db.insert({'other': 'no_val'})
++    db.update(decrement('val'))
++    docs = db.all()
++    with_field = [d for d in docs if 'val' in d]
++    without_field = [d for d in docs if 'val' not in d]
++    assert len(with_field) == 1 and with_field[0]['val'] == 9
++    assert len(without_field) == 1 and without_field[0]['other'] == 'no_val'
+diff --git a/tinydb/operations.py b/tinydb/operations.py
+index 7101a23..a1b356a 100644
+--- a/tinydb/operations.py
++++ b/tinydb/operations.py
+@@ -18,7 +18,8 @@ def delete(field: str) -> Callable[[MutableMapping], None]:
+     Delete a given field from the document.
+     """
+     def transform(doc: MutableMapping):
+-        del doc[field]
++        if field in doc:
++            del doc[field]
+ 
+     return transform
+ 
+@@ -28,7 +29,8 @@ def add(field: str, n: Union[int, float]) -> Callable[[MutableMapping], None]:
+     Add ``n`` to a given field in the document.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] += n
++        if field in doc:
++            doc[field] += n
+ 
+     return transform
+ 
+@@ -38,7 +40,8 @@ def subtract(field: str, n: Union[int, float]) -> Callable[[MutableMapping], Non
+     Subtract ``n`` to a given field in the document.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] -= n
++        if field in doc:
++            doc[field] -= n
+ 
+     return transform
+ 
+@@ -58,7 +61,8 @@ def increment(field: str) -> Callable[[MutableMapping], None]:
+     Increment a given field in the document by 1.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] += 1
++        if field in doc:
++            doc[field] += 1
+ 
+     return transform
+ 
+@@ -68,6 +72,7 @@ def decrement(field: str) -> Callable[[MutableMapping], None]:
+     Decrement a given field in the document by 1.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] -= 1
++        if field in doc:
++            doc[field] -= 1
+ 
+     return transform

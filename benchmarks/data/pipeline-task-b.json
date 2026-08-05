@@ -1,0 +1,54 @@
+{
+ "session": 5,
+ "pm": {
+  "tok_in": 16029,
+  "tok_out": 1097,
+  "cost": 0.051
+ },
+ "runs": [
+  {
+   "task_id": 7,
+   "agent": "dev",
+   "model": "claude-cli sonnet",
+   "tok_in": 261949,
+   "tok_out": 3498,
+   "cost": 0.189,
+   "ms": 81599,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 7,
+   "agent": "qa",
+   "model": "openai llama-3.3-70b-versatile",
+   "tok_in": 1551,
+   "tok_out": 357,
+   "cost": 0.0074,
+   "ms": 3398,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 7,
+   "agent": "review",
+   "model": "openai openai/gpt-oss-120b",
+   "tok_in": 1469,
+   "tok_out": 900,
+   "cost": 0.0127,
+   "ms": 2944,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 7,
+   "agent": "pr",
+   "model": "git/gh (no LLM)",
+   "tok_in": 0,
+   "tok_out": 0,
+   "cost": 0.0,
+   "ms": 7,
+   "status": "completed",
+   "error": null
+  }
+ ]
+}

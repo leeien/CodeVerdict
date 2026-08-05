@@ -1,0 +1,108 @@
+diff --git a/rich/markdown.py b/rich/markdown.py
+index abbbb07d..56060b3c 100644
+--- a/rich/markdown.py
++++ b/rich/markdown.py
+@@ -381,9 +381,30 @@ class ListItem(TextElement):
+         self.elements.append(child)
+         return False
+ 
++    def _get_render_elements(self) -> Renderables:
++        """Return renderables with checkbox prefixes converted to Unicode symbols."""
++        renderables = self.elements._renderables
++        if not renderables:
++            return self.elements
++        first = renderables[0]
++        if not isinstance(first, Paragraph):
++            return self.elements
++        plain = first.text.plain
++        if len(plain) >= 4 and plain[0] == "[" and plain[2] == "]" and plain[3] == " ":
++            if plain[1] == " ":
++                symbol = "☐"
++            elif plain[1] in ("x", "X"):
++                symbol = "☑"
++            else:
++                return self.elements
++            new_para = Paragraph(justify=first.justify)
++            new_para.text = Text(symbol + " " + plain[4:], justify=first.justify)
++            return Renderables([new_para] + renderables[1:])
++        return self.elements
++
+     def render_bullet(self, console: Console, options: ConsoleOptions) -> RenderResult:
+         render_options = options.update(width=options.max_width - 3)
+-        lines = console.render_lines(self.elements, render_options, style=self.style)
++        lines = console.render_lines(self._get_render_elements(), render_options, style=self.style)
+         bullet_style = console.get_style("markdown.item.bullet", default="none")
+ 
+         bullet = Segment(" • ", bullet_style)
+diff --git a/tests/test_markdown.py b/tests/test_markdown.py
+index c461c769..0a86d9c0 100644
+--- a/tests/test_markdown.py
++++ b/tests/test_markdown.py
+@@ -215,6 +215,67 @@ def test_inline_code_in_table_cells() -> None:
+     assert result == expected
+ 
+ 
++def _render_simple(md_text: str) -> str:
++    import io
++    from rich.console import Console
++
++    console = Console(width=80, file=io.StringIO(), color_system=None, legacy_windows=False)
++    console.print(Markdown(md_text))
++    return console.file.getvalue()
++
++
++def test_checkbox_unchecked() -> None:
++    output = _render_simple("- [ ] unchecked item")
++    assert "☐" in output
++    assert "unchecked item" in output
++    assert "[" not in output
++
++
++def test_checkbox_checked_lower() -> None:
++    output = _render_simple("- [x] checked item")
++    assert "☑" in output
++    assert "checked item" in output
++    assert "[" not in output
++
++
++def test_checkbox_checked_upper() -> None:
++    output = _render_simple("- [X] checked item upper")
++    assert "☑" in output
++    assert "checked item upper" in output
++    assert "[" not in output
++
++
++def test_plain_bullet_unchanged() -> None:
++    output = _render_simple("- plain item")
++    assert "plain item" in output
++    assert "☐" not in output
++    assert "☑" not in output
++
++
++def test_non_checkbox_bracket_passthrough() -> None:
++    output = _render_simple("- [a] not a checkbox")
++    assert "[a]" in output
++    assert "☐" not in output
++    assert "☑" not in output
++
++
++def test_checkbox_idempotent() -> None:
++    import io
++    from rich.console import Console
++
++    md = Markdown("- [ ] idempotent item")
++    console1 = Console(width=80, file=io.StringIO(), color_system=None, legacy_windows=False)
++    console1.print(md)
++    first = console1.file.getvalue()
++
++    console2 = Console(width=80, file=io.StringIO(), color_system=None, legacy_windows=False)
++    console2.print(md)
++    second = console2.file.getvalue()
++
++    assert first == second
++    assert "☐" in first
++
++
+ if __name__ == "__main__":
+     markdown = Markdown(MARKDOWN)
+     rendered = render(markdown)

@@ -1,0 +1,13 @@
+I have a single-line text entry field in my app, and I've configured it with a maximum allowed
+length so the user can't put in more than a set number of characters.
+
+This limit works when the user is typing into the field by hand - once they hit the maximum,
+further typed characters are refused. But if my program sets the field's contents directly (for
+example, pre-filling it from saved data or code), the maximum length is ignored completely and
+the field ends up holding text longer than the limit I set.
+
+The maximum length should be respected no matter how the field's contents get there - whether the
+user typed them or my program set them. A value that is too long should not be allowed to sit in
+the field just because it was set programmatically rather than typed.
+
+Please fix this so the maximum-length limit is enforced consistently, with regression tests.

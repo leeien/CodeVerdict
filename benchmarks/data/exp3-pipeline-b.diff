@@ -1,0 +1,59 @@
+diff --git a/rich/ansi.py b/rich/ansi.py
+index 7bbcb0bf..f6c741e1 100644
+--- a/rich/ansi.py
++++ b/rich/ansi.py
+@@ -132,6 +132,7 @@ class AnsiDecoder:
+         Yields:
+             Text: Marked up Text.
+         """
++        terminal_text = terminal_text.replace("\r\n", "\n").replace("\r", "\n")
+         for line in re.split(r"(?<=\n)", terminal_text):
+             yield self.decode_line(line.rstrip("\n"))
+ 
+diff --git a/tests/test_ansi.py b/tests/test_ansi.py
+index 21e20b44..a0eea6a9 100644
+--- a/tests/test_ansi.py
++++ b/tests/test_ansi.py
+@@ -102,3 +102,42 @@ def test_decode_newlines():
+     assert Text.from_ansi("Hello\nWorld\n").plain == "Hello\nWorld\n"
+     assert Text.from_ansi("Hello\nWorld\n\n").plain == "Hello\nWorld\n\n"
+     assert Text.from_ansi("\nHello\nWorld\n\n").plain == "\nHello\nWorld\n\n"
++
++
++def test_ansi_decoder_crlf():
++    """Lines separated by \\r\\n should all appear in decoded output."""
++    decoder = AnsiDecoder()
++    lines = list(decoder.decode("foo\r\nbar\r\nbaz"))
++    plain = [str(t) for t in lines]
++    assert "foo" in plain
++    assert "bar" in plain
++    assert "baz" in plain
++
++
++def test_ansi_decoder_bare_cr():
++    """Lines separated by bare \\r should all appear in decoded output."""
++    decoder = AnsiDecoder()
++    lines = list(decoder.decode("foo\rbar\rbaz"))
++    plain = [str(t) for t in lines]
++    assert "foo" in plain
++    assert "bar" in plain
++    assert "baz" in plain
++
++
++def test_ansi_decoder_mixed_endings():
++    """Input mixing \\r\\n and \\n should produce all lines."""
++    decoder = AnsiDecoder()
++    lines = list(decoder.decode("foo\r\nbar\nbaz"))
++    plain = [str(t) for t in lines]
++    assert "foo" in plain
++    assert "bar" in plain
++    assert "baz" in plain
++
++
++def test_ansi_decoder_lf_unchanged():
++    """\\n-only and \\r\\n input should produce identical decoded output."""
++    decoder = AnsiDecoder()
++    lf_lines = [str(t) for t in decoder.decode("foo\nbar\nbaz")]
++    crlf_lines = [str(t) for t in decoder.decode("foo\r\nbar\r\nbaz")]
++    assert lf_lines == ["foo", "bar", "baz"]
++    assert crlf_lines == lf_lines

@@ -1,0 +1,44 @@
+diff --git a/rich/ansi.py b/rich/ansi.py
+index 7bbcb0bf..ffe657f2 100644
+--- a/rich/ansi.py
++++ b/rich/ansi.py
+@@ -133,7 +133,7 @@ class AnsiDecoder:
+             Text: Marked up Text.
+         """
+         for line in re.split(r"(?<=\n)", terminal_text):
+-            yield self.decode_line(line.rstrip("\n"))
++            yield self.decode_line(line.rstrip("\r\n"))
+ 
+     def decode_line(self, line: str) -> Text:
+         """Decode a line containing ansi codes.
+diff --git a/tests/test_ansi.py b/tests/test_ansi.py
+index 21e20b44..24d3d096 100644
+--- a/tests/test_ansi.py
++++ b/tests/test_ansi.py
+@@ -86,6 +86,26 @@ def test_strip_private_escape_sequences(code):
+     assert capture.get() == expected
+ 
+ 
++def test_decode_windows_line_endings():
++    """Windows programs produce CRLF (\\r\\n) output. The trailing \\r must not be
++    treated as a cursor-overwrite that erases the line content.
++    Regression test for Windows captured output showing blank lines.
++    """
++    decoder = AnsiDecoder()
++
++    # Plain text with Windows CRLF endings
++    lines = list(decoder.decode("line1\r\nline2\r\nline3\r\n"))
++    assert [str(t) for t in lines] == ["line1", "line2", "line3", ""]
++
++    # ANSI-styled text with Windows CRLF endings
++    lines = list(decoder.decode("\x1b[1mfoo\x1b[0m\r\nbar\r\nbaz\r\n"))
++    assert [str(t) for t in lines] == ["foo", "bar", "baz", ""]
++
++    # In-line CR (cursor overwrite / progress animation) still works with CRLF
++    lines = list(decoder.decode("10%\r20%\r\nline2\r\n"))
++    assert [str(t) for t in lines] == ["20%", "line2", ""]
++
++
+ def test_decode_newlines():
+     """Test newlines are preserved.
+     Regression test for https://github.com/Textualize/rich/issues/3577

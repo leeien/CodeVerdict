@@ -1,0 +1,139 @@
+{
+  "repo": "https://github.com/Textualize/rich",
+  "k": 3,
+  "results": {
+    "full pipeline": {
+      "mechanism": {
+        "recall_at_k": 1.0,
+        "mrr": 0.9,
+        "hits": 15,
+        "n": 15,
+        "misses": []
+      },
+      "string literals": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "hits": 4,
+        "n": 4,
+        "misses": []
+      }
+    },
+    "no graph expansion": {
+      "mechanism": {
+        "recall_at_k": 1.0,
+        "mrr": 0.9,
+        "hits": 15,
+        "n": 15,
+        "misses": []
+      },
+      "string literals": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "hits": 4,
+        "n": 4,
+        "misses": []
+      }
+    },
+    "no lexical refinement": {
+      "mechanism": {
+        "recall_at_k": 1.0,
+        "mrr": 0.9,
+        "hits": 15,
+        "n": 15,
+        "misses": []
+      },
+      "string literals": {
+        "recall_at_k": 0.5,
+        "mrr": 0.5,
+        "hits": 2,
+        "n": 4,
+        "misses": [
+          "rich/console.py (got rich/columns.py, rich/constrain.py)",
+          "rich/diagnose.py (got rich/control.py, rich/console.py)"
+        ]
+      }
+    },
+    "no rerank": {
+      "mechanism": {
+        "recall_at_k": 0.9333333333333333,
+        "mrr": 0.7,
+        "hits": 14,
+        "n": 15,
+        "misses": [
+          "rich/progress.py (got tests/test_progress.py)"
+        ]
+      },
+      "string literals": {
+        "recall_at_k": 0.25,
+        "mrr": 0.125,
+        "hits": 1,
+        "n": 4,
+        "misses": [
+          "rich/console.py (got tests/test_jupyter.py, rich/columns.py)",
+          "rich/console.py (got tests/test_console.py)",
+          "rich/diagnose.py (got tests/test_console.py, rich/control.py, rich/console.py)"
+        ]
+      }
+    },
+    "2-hop expansion": {
+      "mechanism": {
+        "recall_at_k": 1.0,
+        "mrr": 0.9,
+        "hits": 15,
+        "n": 15,
+        "misses": []
+      },
+      "string literals": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "hits": 4,
+        "n": 4,
+        "misses": []
+      }
+    },
+    "fuse only (no stage 2-5)": {
+      "mechanism": {
+        "recall_at_k": 0.9333333333333333,
+        "mrr": 0.7,
+        "hits": 14,
+        "n": 15,
+        "misses": [
+          "rich/progress.py (got tests/test_progress.py)"
+        ]
+      },
+      "string literals": {
+        "recall_at_k": 0.25,
+        "mrr": 0.125,
+        "hits": 1,
+        "n": 4,
+        "misses": [
+          "rich/console.py (got tests/test_jupyter.py, rich/columns.py)",
+          "rich/console.py (got tests/test_console.py)",
+          "rich/diagnose.py (got tests/test_console.py, rich/control.py, rich/console.py)"
+        ]
+      }
+    },
+    "no semantic channel (BM25 only)": {
+      "mechanism": {
+        "recall_at_k": 0.6666666666666666,
+        "mrr": 0.5222222222222223,
+        "hits": 10,
+        "n": 15,
+        "misses": [
+          "rich/cells.py (got rich/console.py, rich/markup.py, rich/panel.py)",
+          "rich/_wrap.py (got rich/console.py, rich/progress.py)",
+          "rich/markup.py (got rich/styled.py, rich/_win32_console.py, rich/padding.py)",
+          "rich/pretty.py (got benchmarks/benchmarks.py, rich/__init__.py, rich/console.py)",
+          "rich/panel.py (got rich/console.py, rich/control.py)"
+        ]
+      },
+      "string literals": {
+        "recall_at_k": 1.0,
+        "mrr": 1.0,
+        "hits": 4,
+        "n": 4,
+        "misses": []
+      }
+    }
+  }
+}

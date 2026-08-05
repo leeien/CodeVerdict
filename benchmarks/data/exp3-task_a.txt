@@ -1,0 +1,13 @@
+When I display a markdown document that contains a checklist - the kind of list where
+every item has a tick box next to it and some items are ticked off as done while others
+are still outstanding - the tick boxes do not come out as tick boxes. Each item just
+shows a plain bullet point followed by raw square brackets, so the reader sees the
+literal punctuation instead of a box, and there is no visual difference between a
+finished item and an unfinished one other than a stray letter between the brackets.
+
+I would like checklists to render properly: a completed item should clearly read as
+completed and an outstanding item should clearly read as outstanding, using an actual
+tick box rather than raw brackets. Ordinary bulleted lists that have no tick boxes must
+keep looking exactly as they do today.
+
+Please add this capability, with tests.

@@ -1,0 +1,165 @@
+diff --git a/rich/console.py b/rich/console.py
+index 0bdce769..f3403cad 100644
+--- a/rich/console.py
++++ b/rich/console.py
+@@ -2138,13 +2138,24 @@ class Console:
+         not_terminal = not self.is_terminal
+         if self.no_color and color_system:
+             buffer = Segment.remove_color(buffer)
++        # Map link URLs to a stable ID so that multiple styled segments that
++        # share the same URL all emit the same OSC 8 id, keeping the link as
++        # one continuous clickable region in the terminal.
++        _link_ids: Dict[str, str] = {}
+         for text, style, control in buffer:
+             if style:
++                link = style.link
++                link_id = ""
++                if link:
++                    if link not in _link_ids:
++                        _link_ids[link] = style.link_id
++                    link_id = _link_ids[link]
+                 append(
+                     style.render(
+                         text,
+                         color_system=color_system,
+                         legacy_windows=legacy_windows,
++                        link_id=link_id,
+                     )
+                 )
+             elif not (not_terminal and control):
+diff --git a/rich/style.py b/rich/style.py
+index 3806a8c4..54c1aed4 100644
+--- a/rich/style.py
++++ b/rich/style.py
+@@ -697,12 +697,14 @@ class Style:
+         *,
+         color_system: Optional[ColorSystem] = ColorSystem.TRUECOLOR,
+         legacy_windows: bool = False,
++        link_id: str = "",
+     ) -> str:
+         """Render the ANSI codes for the style.
+ 
+         Args:
+             text (str, optional): A string to style. Defaults to "".
+             color_system (Optional[ColorSystem], optional): Color system to render to. Defaults to ColorSystem.TRUECOLOR.
++            link_id (str, optional): Override the link ID used in OSC 8 sequences. Defaults to "".
+ 
+         Returns:
+             str: A string containing ANSI style codes.
+@@ -712,8 +714,9 @@ class Style:
+         attrs = self._ansi or self._make_ansi_codes(color_system)
+         rendered = f"\x1b[{attrs}m{text}\x1b[0m" if attrs else text
+         if self._link and not legacy_windows:
++            _link_id = link_id or self._link_id
+             rendered = (
+-                f"\x1b]8;id={self._link_id};{self._link}\x1b\\{rendered}\x1b]8;;\x1b\\"
++                f"\x1b]8;id={_link_id};{self._link}\x1b\\{rendered}\x1b]8;;\x1b\\"
+             )
+         return rendered
+ 
+diff --git a/tests/test_console.py b/tests/test_console.py
+index e52c1b36..b72d9901 100644
+--- a/tests/test_console.py
++++ b/tests/test_console.py
+@@ -1,6 +1,7 @@
+ import datetime
+ import io
+ import os
++import re
+ import subprocess
+ import sys
+ import tempfile
+@@ -1133,3 +1134,65 @@ def test_tty_compatible() -> None:
+     assert not console.is_terminal
+     # Should not have auto-detected
+     assert not console.file.called_isatty
++
++
++def test_link_id_stable_across_emphasis_splits() -> None:
++    """All OSC 8 segments for the same URL must share one link id.
++
++    When an emphasised word falls inside a hyperlink the text is split into
++    several Segments (before, emphasised word, after).  Each Segment must still
++    carry the *same* OSC 8 id so that the terminal treats the whole URL as one
++    continuous clickable region.
++    """
++    console = Console(
++        file=io.StringIO(), force_terminal=True, legacy_windows=False, _environ={}
++    )
++    url = "https://www.example.com/path"
++    text = Text(url)
++    # Apply the link to the entire URL
++    text.stylize(f"link {url}", 0, len(url))
++    # "example" sits at index 12–19 inside the URL; highlight it in bold red
++    text.stylize("bold red", 12, 19)
++    console.print(text, end="")
++    output = console.file.getvalue()
++
++    # Collect (id, url) pairs from every OSC 8 open-link sequence
++    link_opens = re.findall(
++        r"\x1b\]8;id=([^;]+);([^\x1b]+)\x1b\\",
++        output,
++    )
++    url_opens = [(lid, u) for lid, u in link_opens if u == url]
++
++    # The emphasis should have produced multiple link segments …
++    assert len(url_opens) > 1, (
++        "Expected the link to be split into multiple OSC 8 segments by the emphasis"
++    )
++    # … but every segment must carry the identical id.
++    ids = {lid for lid, _ in url_opens}
++    assert len(ids) == 1, (
++        f"Link id changed between segments for {url!r}: found ids {ids!r}"
++    )
++
++
++def test_link_id_stable_multiple_occurrences_same_url() -> None:
++    """The same URL printed twice reuses the same stable link id throughout."""
++    console = Console(
++        file=io.StringIO(), force_terminal=True, legacy_windows=False, _environ={}
++    )
++    url = "https://docs.example.org"
++    text = Text(f"See {url} and also {url}")
++    # Two separate link spans that share the same URL
++    text.stylize(f"link {url}", 4, 4 + len(url))
++    text.stylize(f"link {url}", 4 + len(url) + 9, 4 + len(url) + 9 + len(url))
++    # Emphasise the word "docs" (index 8 in the first occurrence)
++    text.stylize("bold", 8, 12)
++    console.print(text, end="")
++    output = console.file.getvalue()
++
++    link_opens = re.findall(r"\x1b\]8;id=([^;]+);([^\x1b]+)\x1b\\", output)
++    url_opens = [lid for lid, u in link_opens if u == url]
++
++    assert len(url_opens) > 1, "Expected multiple link segments"
++    assert len(set(url_opens)) == 1, (
++        f"Expected all link segments for {url!r} to share one id, got {set(url_opens)!r}"
++    )
+diff --git a/tests/test_style.py b/tests/test_style.py
+index 84a65a67..d0e20426 100644
+--- a/tests/test_style.py
++++ b/tests/test_style.py
+@@ -162,6 +162,23 @@ def test_render():
+     assert Style().render("foo") == "foo"
+ 
+ 
++def test_render_link_id_override():
++    """render() should use the supplied link_id instead of the style's own id."""
++    style = Style(link="https://example.org")
++    default_rendered = style.render("click")
++    # The style's own id is used when no override is supplied
++    assert f"id={style.link_id};" in default_rendered
++
++    # An explicit link_id overrides the style's own id
++    overridden = style.render("click", link_id="custom-id-42")
++    assert "id=custom-id-42;" in overridden
++    assert f"id={style.link_id};" not in overridden
++
++    # The URL and text are still present
++    assert "https://example.org" in overridden
++    assert "click" in overridden
++
++
+ def test_test():
+     Style(color="red").test("hello")
+ 

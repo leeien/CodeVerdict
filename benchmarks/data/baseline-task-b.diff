@@ -1,0 +1,88 @@
+diff --git a/tests/test_operations.py b/tests/test_operations.py
+index 3a6f814..2dab8c8 100644
+--- a/tests/test_operations.py
++++ b/tests/test_operations.py
+@@ -35,3 +35,40 @@ def test_increment(db):
+ def test_decrement(db):
+     db.update(decrement('int'), where('char') == 'a')
+     assert db.get(where('char') == 'a')['int'] == 0
++
++
++def test_increment_missing_field_skips(db):
++    # Documents without the target field should be left unchanged (no KeyError).
++    db.insert({'char': 'd'})  # no 'int' field
++    db.update(increment('int'))  # update all documents
++    doc = db.get(where('char') == 'd')
++    assert 'int' not in doc
++
++
++def test_decrement_missing_field_skips(db):
++    db.insert({'char': 'd'})
++    db.update(decrement('int'))
++    doc = db.get(where('char') == 'd')
++    assert 'int' not in doc
++
++
++def test_add_missing_field_skips(db):
++    db.insert({'char': 'd'})
++    db.update(add('int', 5))
++    doc = db.get(where('char') == 'd')
++    assert 'int' not in doc
++
++
++def test_subtract_missing_field_skips(db):
++    db.insert({'char': 'd'})
++    db.update(subtract('int', 5))
++    doc = db.get(where('char') == 'd')
++    assert 'int' not in doc
++
++
++def test_increment_mixed_docs_updates_only_those_with_field(db):
++    # Documents WITH the field should still be updated; those without should be left alone.
++    db.insert({'char': 'd'})  # no 'int' field
++    db.update(increment('int'))
++    assert db.get(where('char') == 'a')['int'] == 2  # had int=1, now 2
++    assert 'int' not in db.get(where('char') == 'd')
+diff --git a/tinydb/operations.py b/tinydb/operations.py
+index 7101a23..65af1e7 100644
+--- a/tinydb/operations.py
++++ b/tinydb/operations.py
+@@ -28,7 +28,8 @@ def add(field: str, n: Union[int, float]) -> Callable[[MutableMapping], None]:
+     Add ``n`` to a given field in the document.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] += n
++        if field in doc:
++            doc[field] += n
+ 
+     return transform
+ 
+@@ -38,7 +39,8 @@ def subtract(field: str, n: Union[int, float]) -> Callable[[MutableMapping], Non
+     Subtract ``n`` to a given field in the document.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] -= n
++        if field in doc:
++            doc[field] -= n
+ 
+     return transform
+ 
+@@ -58,7 +60,8 @@ def increment(field: str) -> Callable[[MutableMapping], None]:
+     Increment a given field in the document by 1.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] += 1
++        if field in doc:
++            doc[field] += 1
+ 
+     return transform
+ 
+@@ -68,6 +71,7 @@ def decrement(field: str) -> Callable[[MutableMapping], None]:
+     Decrement a given field in the document by 1.
+     """
+     def transform(doc: MutableMapping):
+-        doc[field] -= 1
++        if field in doc:
++            doc[field] -= 1
+ 
+     return transform

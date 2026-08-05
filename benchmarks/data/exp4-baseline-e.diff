@@ -1,0 +1,78 @@
+diff --git a/src/textual/widgets/_input.py b/src/textual/widgets/_input.py
+index bcf2c29..f21851a 100644
+--- a/src/textual/widgets/_input.py
++++ b/src/textual/widgets/_input.py
+@@ -509,6 +509,11 @@ class Input(ScrollView):
+         """
+         return character is not None and character.isprintable()
+ 
++    def validate_value(self, value: str) -> str:
++        if self.max_length and len(value) > self.max_length:
++            value = value[: self.max_length]
++        return value
++
+     def validate_selection(self, selection: Selection) -> Selection:
+         start, end = selection
+         value_length = len(self.value)
+diff --git a/tests/input/test_input_restrict.py b/tests/input/test_input_restrict.py
+index 48d9d50..ff43144 100644
+--- a/tests/input/test_input_restrict.py
++++ b/tests/input/test_input_restrict.py
+@@ -105,6 +105,57 @@ async def test_max_length():
+         assert input_widget.value == "12340"
+ 
+ 
++async def test_max_length_programmatic_assignment():
++    """Check max_length is enforced when value is set programmatically."""
++
++    class InputApp(App):
++        def compose(self) -> ComposeResult:
++            yield Input(max_length=5)
++
++    async with InputApp().run_test() as pilot:
++        input_widget = pilot.app.query_one(Input)
++        input_widget.value = "abcdefgh"
++        assert input_widget.value == "abcde"
++
++
++async def test_max_length_constructor_value():
++    """Check max_length is enforced on the initial value passed to the constructor."""
++
++    class InputApp(App):
++        def compose(self) -> ComposeResult:
++            yield Input("toolongvalue", max_length=5)
++
++    async with InputApp().run_test() as pilot:
++        input_widget = pilot.app.query_one(Input)
++        assert input_widget.value == "toolongvalue"[:5]
++        assert len(input_widget.value) == 5
++
++
++async def test_max_length_constructor_value_exact():
++    """A constructor value exactly at max_length is accepted unchanged."""
++
++    class InputApp(App):
++        def compose(self) -> ComposeResult:
++            yield Input("hello", max_length=5)
++
++    async with InputApp().run_test() as pilot:
++        input_widget = pilot.app.query_one(Input)
++        assert input_widget.value == "hello"
++
++
++async def test_max_length_programmatic_assignment_exact():
++    """Programmatic assignment exactly at max_length is accepted unchanged."""
++
++    class InputApp(App):
++        def compose(self) -> ComposeResult:
++            yield Input(max_length=5)
++
++    async with InputApp().run_test() as pilot:
++        input_widget = pilot.app.query_one(Input)
++        input_widget.value = "hello"
++        assert input_widget.value == "hello"
++
++
+ async def test_restrict():
+     """Test restriction by regex."""
+ 

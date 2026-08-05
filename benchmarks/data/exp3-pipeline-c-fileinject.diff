@@ -1,0 +1,157 @@
+diff --git a/rich/console.py b/rich/console.py
+index 0bdce769..0650aa5d 100644
+--- a/rich/console.py
++++ b/rich/console.py
+@@ -2138,18 +2138,54 @@ class Console:
+         not_terminal = not self.is_terminal
+         if self.no_color and color_system:
+             buffer = Segment.remove_color(buffer)
++
++        link_buffer: List[str] = []
++        current_link: Optional[str] = None
++        current_link_id: str = ""
++
++        def flush_link() -> None:
++            nonlocal current_link, current_link_id
++            if link_buffer:
++                joined = "".join(link_buffer)
++                append(
++                    f"\x1b]8;id={current_link_id};{current_link}\x1b\\{joined}\x1b]8;;\x1b\\"
++                )
++                link_buffer.clear()
++            current_link = None
++            current_link_id = ""
++
+         for text, style, control in buffer:
+             if style:
+-                append(
+-                    style.render(
+-                        text,
+-                        color_system=color_system,
+-                        legacy_windows=legacy_windows,
++                seg_link = style._link if not legacy_windows else None
++                if seg_link:
++                    if seg_link != current_link:
++                        flush_link()
++                        current_link = seg_link
++                        current_link_id = style._link_id
++                    link_buffer.append(
++                        style.render(
++                            text,
++                            color_system=color_system,
++                            legacy_windows=legacy_windows,
++                            links=False,
++                        )
++                    )
++                else:
++                    flush_link()
++                    append(
++                        style.render(
++                            text,
++                            color_system=color_system,
++                            legacy_windows=legacy_windows,
++                        )
+                     )
+-                )
+             elif not (not_terminal and control):
++                flush_link()
+                 append(text)
++            else:
++                flush_link()
+ 
++        flush_link()
+         rendered = "".join(output)
+         return rendered
+ 
+diff --git a/rich/style.py b/rich/style.py
+index 3806a8c4..54b697d6 100644
+--- a/rich/style.py
++++ b/rich/style.py
+@@ -697,12 +697,14 @@ class Style:
+         *,
+         color_system: Optional[ColorSystem] = ColorSystem.TRUECOLOR,
+         legacy_windows: bool = False,
++        links: bool = True,
+     ) -> str:
+         """Render the ANSI codes for the style.
+ 
+         Args:
+             text (str, optional): A string to style. Defaults to "".
+             color_system (Optional[ColorSystem], optional): Color system to render to. Defaults to ColorSystem.TRUECOLOR.
++            links (bool, optional): Render hyperlink escape sequences. Defaults to True.
+ 
+         Returns:
+             str: A string containing ANSI style codes.
+@@ -711,7 +713,7 @@ class Style:
+             return text
+         attrs = self._ansi or self._make_ansi_codes(color_system)
+         rendered = f"\x1b[{attrs}m{text}\x1b[0m" if attrs else text
+-        if self._link and not legacy_windows:
++        if links and self._link and not legacy_windows:
+             rendered = (
+                 f"\x1b]8;id={self._link_id};{self._link}\x1b\\{rendered}\x1b]8;;\x1b\\"
+             )
+diff --git a/tests/test_console.py b/tests/test_console.py
+index e52c1b36..e6aa7910 100644
+--- a/tests/test_console.py
++++ b/tests/test_console.py
+@@ -1133,3 +1133,59 @@ def test_tty_compatible() -> None:
+     assert not console.is_terminal
+     # Should not have auto-detected
+     assert not console.file.called_isatty
++
++
++def test_link_coalescing_in_render_buffer() -> None:
++    """Emphasized text spanning a single hyperlink should produce one OSC 8 pair."""
++    from rich.segment import Segment
++    from rich.style import Style
++
++    console = Console(force_terminal=True, color_system="truecolor")
++    url = "https://example.com"
++    bold_link = Style(bold=True, link=url)
++    italic_link = Style(italic=True, link=url)
++    buffer = [
++        Segment("Hello", bold_link),
++        Segment(" World", italic_link),
++    ]
++    rendered = console._render_buffer(buffer)
++    # Only one opening OSC 8 sequence for the URL
++    assert rendered.count(f"\x1b]8;") == 2  # one open + one close pair
++    assert url in rendered
++    # Bold ANSI code present
++    assert "\x1b[1m" in rendered
++    # Italic ANSI code present
++    assert "\x1b[3m" in rendered
++
++
++def test_multiple_links_not_coalesced() -> None:
++    """Different hyperlinks must remain separate OSC 8 pairs."""
++    from rich.segment import Segment
++    from rich.style import Style
++
++    console = Console(force_terminal=True, color_system="truecolor")
++    url1 = "https://example.com"
++    url2 = "https://other.com"
++    buffer = [
++        Segment("First", Style(bold=True, link=url1)),
++        Segment("Second", Style(italic=True, link=url2)),
++    ]
++    rendered = console._render_buffer(buffer)
++    # Two opening sequences — one per URL
++    assert rendered.count(f"\x1b]8;id=") == 2
++    assert url1 in rendered
++    assert url2 in rendered
++
++
++def test_plain_link_unchanged() -> None:
++    """Plain (non-emphasized) links should still render correctly."""
++    from rich.segment import Segment
++    from rich.style import Style
++
++    console = Console(force_terminal=True, color_system="truecolor")
++    url = "https://example.com"
++    buffer = [Segment("click me", Style(link=url))]
++    rendered = console._render_buffer(buffer)
++    assert url in rendered
++    assert "click me" in rendered
++    assert "\x1b]8;" in rendered

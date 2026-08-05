@@ -1,0 +1,220 @@
+diff --git a/rich/console.py b/rich/console.py
+index 0bdce769..7b914302 100644
+--- a/rich/console.py
++++ b/rich/console.py
+@@ -2138,17 +2138,50 @@ class Console:
+         not_terminal = not self.is_terminal
+         if self.no_color and color_system:
+             buffer = Segment.remove_color(buffer)
+-        for text, style, control in buffer:
++        can_coalesce_links = color_system is not None and not legacy_windows
++        segments = list(buffer)
++        i = 0
++        while i < len(segments):
++            text, style, control = segments[i]
+             if style:
+-                append(
+-                    style.render(
+-                        text,
+-                        color_system=color_system,
+-                        legacy_windows=legacy_windows,
++                if can_coalesce_links and style.link:
++                    link = style.link
++                    link_id = style.link_id
++                    run: List[str] = []
++                    j = i
++                    while j < len(segments):
++                        t, s, c = segments[j]
++                        if s is not None and s.link == link:
++                            run.append(
++                                s.render(
++                                    t,
++                                    color_system=color_system,
++                                    legacy_windows=legacy_windows,
++                                    links=False,
++                                )
++                            )
++                            j += 1
++                        else:
++                            break
++                    inner = "".join(run)
++                    append(
++                        f"\x1b]8;id={link_id};{link}\x1b\\{inner}\x1b]8;;\x1b\\"
+                     )
+-                )
++                    i = j
++                else:
++                    append(
++                        style.render(
++                            text,
++                            color_system=color_system,
++                            legacy_windows=legacy_windows,
++                        )
++                    )
++                    i += 1
+             elif not (not_terminal and control):
+                 append(text)
++                i += 1
++            else:
++                i += 1
+ 
+         rendered = "".join(output)
+         return rendered
+diff --git a/rich/style.py b/rich/style.py
+index 3806a8c4..ee714b47 100644
+--- a/rich/style.py
++++ b/rich/style.py
+@@ -697,12 +697,14 @@ class Style:
+         *,
+         color_system: Optional[ColorSystem] = ColorSystem.TRUECOLOR,
+         legacy_windows: bool = False,
++        links: bool = True,
+     ) -> str:
+         """Render the ANSI codes for the style.
+ 
+         Args:
+             text (str, optional): A string to style. Defaults to "".
+             color_system (Optional[ColorSystem], optional): Color system to render to. Defaults to ColorSystem.TRUECOLOR.
++            links (bool, optional): Enable OSC 8 hyperlink sequences. Defaults to True.
+ 
+         Returns:
+             str: A string containing ANSI style codes.
+@@ -711,7 +713,7 @@ class Style:
+             return text
+         attrs = self._ansi or self._make_ansi_codes(color_system)
+         rendered = f"\x1b[{attrs}m{text}\x1b[0m" if attrs else text
+-        if self._link and not legacy_windows:
++        if self._link and not legacy_windows and links:
+             rendered = (
+                 f"\x1b]8;id={self._link_id};{self._link}\x1b\\{rendered}\x1b]8;;\x1b\\"
+             )
+diff --git a/rich/text.py b/rich/text.py
+index 7e087a4e..257fc02e 100644
+--- a/rich/text.py
++++ b/rich/text.py
+@@ -459,6 +459,8 @@ class Text(JupyterMixin):
+         style: Union[str, Style],
+         start: int = 0,
+         end: Optional[int] = None,
++        *,
++        emit_link: bool = True,
+     ) -> None:
+         """Apply a style to the text, or a portion of the text.
+ 
+@@ -466,6 +468,7 @@ class Text(JupyterMixin):
+             style (Union[str, Style]): Style instance or style definition to apply.
+             start (int): Start offset (negative indexing is supported). Defaults to 0.
+             end (Optional[int], optional): End offset (negative indexing is supported), or None for end of text. Defaults to None.
++            emit_link (bool, optional): If False, any link in the style is not applied to the span. Defaults to True.
+         """
+         if style:
+             length = len(self)
+@@ -478,6 +481,8 @@ class Text(JupyterMixin):
+             if start >= length or end <= start:
+                 # Span not in text or not valid
+                 return
++            if not emit_link and isinstance(style, Style) and style.link:
++                style = style.update_link(None)
+             self._spans.append(Span(start, min(length, end), style))
+ 
+     def stylize_before(
+diff --git a/tests/test_console.py b/tests/test_console.py
+index e52c1b36..f0b1874f 100644
+--- a/tests/test_console.py
++++ b/tests/test_console.py
+@@ -1133,3 +1133,40 @@ def test_tty_compatible() -> None:
+     assert not console.is_terminal
+     # Should not have auto-detected
+     assert not console.file.called_isatty
++
++
++def test_hyperlink_not_fragmented_by_emphasis() -> None:
++    """A URL with partial emphasis must render as a single OSC 8 hyperlink pair."""
++    console = Console(
++        force_terminal=True, legacy_windows=False, color_system="truecolor"
++    )
++    text = Text("click here")
++    text.stylize(Style(link="https://example.com"))
++    text.stylize(Style(bold=True), 6, 10)
++
++    with console.capture() as capture:
++        console.print(text, end="")
++
++    output = capture.get()
++    # The URL should appear exactly once (one OSC 8 open sequence)
++    assert output.count("https://example.com") == 1
++    # Exactly one OSC 8 close sequence for the link
++    assert output.count("\x1b]8;;\x1b\\") == 1
++
++
++def test_adjacent_different_urls_stay_separate() -> None:
++    """Two adjacent URLs with different hrefs must not be merged."""
++    console = Console(
++        force_terminal=True, legacy_windows=False, color_system="truecolor"
++    )
++    text = Text()
++    text.append("first", style=Style(link="https://first.com"))
++    text.append("second", style=Style(link="https://second.com"))
++
++    with console.capture() as capture:
++        console.print(text, end="")
++
++    output = capture.get()
++    assert output.count("https://first.com") == 1
++    assert output.count("https://second.com") == 1
++    assert output.count("\x1b]8;;\x1b\\") == 2
+diff --git a/tests/test_style.py b/tests/test_style.py
+index 84a65a67..f8295756 100644
+--- a/tests/test_style.py
++++ b/tests/test_style.py
+@@ -265,3 +265,20 @@ def test_clear_meta_and_links_clears_hash():
+ 
+     clear_style = style.clear_meta_and_links()
+     assert clear_style._hash is None
++
++
++def test_combine_preserves_link_when_override_has_none():
++    """Style composition preserves the base link when the override carries no link."""
++    link_style = Style(link="https://example.com", color="red")
++    no_link_style = Style(bold=True)
++    combined = link_style + no_link_style
++    assert combined.link == "https://example.com"
++
++    # Override wins when both styles carry a link
++    other_link_style = Style(link="https://other.com")
++    combined2 = link_style + other_link_style
++    assert combined2.link == "https://other.com"
++
++    # Neither style has a link — composed result has no link
++    combined3 = Style(bold=True) + Style(italic=True)
++    assert combined3.link is None
+diff --git a/tests/test_text.py b/tests/test_text.py
+index b6d39f59..46afd4f2 100644
+--- a/tests/test_text.py
++++ b/tests/test_text.py
+@@ -1127,3 +1127,25 @@ def test_soft_wrap_styled() -> None:
+     # Background is reset before \n
+     expected = "\x1b[34;47msoft wrap is on\x1b[0m\nNext line\n"
+     assert output == expected
++
++
++def test_stylize_preserves_link_on_highlighted_range() -> None:
++    """Applying emphasis to a substring preserves the link on all characters."""
++    console = Console(force_terminal=True, legacy_windows=False)
++    text = Text("click here")
++    text.stylize(Style(link="https://example.com"))
++    text.stylize(Style(bold=True), 6, 10)
++
++    segments = [seg for seg in text.render(console) if seg.style]
++    assert all(seg.style.link == "https://example.com" for seg in segments)
++
++
++def test_non_overlapping_highlight_does_not_affect_link() -> None:
++    """A highlight on non-overlapping text does not discard the link on any segment."""
++    console = Console(force_terminal=True, legacy_windows=False)
++    text = Text("prefix suffix")
++    text.stylize(Style(link="https://example.com"))
++    text.stylize(Style(bold=True), 0, 6)
++
++    segments = [seg for seg in text.render(console) if seg.style]
++    assert all(seg.style.link == "https://example.com" for seg in segments)

@@ -1,0 +1,120 @@
+{
+ "session": 7,
+ "pm": {
+  "tok_in": 47632,
+  "tok_out": 2783,
+  "cost": 0.150531
+ },
+ "runs": [
+  {
+   "task_id": 9,
+   "agent": "dev",
+   "model": "claude-cli sonnet",
+   "tok_in": 732953,
+   "tok_out": 6491,
+   "cost": 0.427,
+   "ms": 110622,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "qa",
+   "model": "claude-cli haiku",
+   "tok_in": 17679,
+   "tok_out": 3665,
+   "cost": 0.0282,
+   "ms": 51657,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "review",
+   "model": "claude-cli haiku",
+   "tok_in": 12861,
+   "tok_out": 2779,
+   "cost": 0.0276,
+   "ms": 37854,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "dev",
+   "model": "claude-cli sonnet",
+   "tok_in": 341908,
+   "tok_out": 4222,
+   "cost": 0.233,
+   "ms": 83751,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "qa",
+   "model": "claude-cli haiku",
+   "tok_in": 17679,
+   "tok_out": 4803,
+   "cost": 0.0343,
+   "ms": 60452,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "review",
+   "model": "claude-cli haiku",
+   "tok_in": 12861,
+   "tok_out": 2600,
+   "cost": 0.0271,
+   "ms": 31208,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "dev",
+   "model": "claude-cli sonnet",
+   "tok_in": 103543,
+   "tok_out": 1489,
+   "cost": 0.101,
+   "ms": 28485,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "qa",
+   "model": "claude-cli haiku",
+   "tok_in": 17679,
+   "tok_out": 4182,
+   "cost": 0.0312,
+   "ms": 52974,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "review",
+   "model": "claude-cli haiku",
+   "tok_in": 21085,
+   "tok_out": 1629,
+   "cost": 0.0128,
+   "ms": 15837,
+   "status": "completed",
+   "error": null
+  },
+  {
+   "task_id": 9,
+   "agent": "pr",
+   "model": "git/gh (no LLM)",
+   "tok_in": 0,
+   "tok_out": 0,
+   "cost": 0.0,
+   "ms": 5,
+   "status": "completed",
+   "error": null
+  }
+ ]
+}
