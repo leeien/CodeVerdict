@@ -149,9 +149,21 @@ class TestTheme:
     def test_wordmark_degrades_on_a_narrow_terminal(self):
         wide = theme.wordmark(100, unicode=True)
         narrow = theme.wordmark(40, unicode=True)
-        assert len(wide) > 1                       # the block wordmark
+        assert wide == [
+            "█   █ █████ ████  ████  █████  ████  █████",
+            "█   █ █     █   █ █   █   █   █       █",
+            "█   █ ████  ████  █   █   █   █       █",
+            " █ █  █     █ █   █   █   █   █       █",
+            "  █   █████ █  ██ ████  █████ ████   █",
+        ]
         assert len(narrow) == 1                    # the lockup
         assert all(len(line) <= 72 for line in wide)
+        assert "VERDICT" in narrow[0].replace(" ", "")
+
+    def test_narrow_wordmark_keeps_the_verdict_brand(self):
+        """A narrow terminal must not silently revert to the old CodeJury name."""
+        assert "VERDICT" in theme.wordmark(40, unicode=True)[0].replace(" ", "")
+        assert "VERDICT" in theme.wordmark(40, unicode=False)[0].replace(" ", "")
 
 
 # ── settings form spec ───────────────────────────────────────────────────────

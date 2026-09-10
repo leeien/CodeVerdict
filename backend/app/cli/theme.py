@@ -133,14 +133,14 @@ class Glyphs:
 
 
 # ── Wordmark ──────────────────────────────────────────────────────────────────
-# 68 columns — fits an 80-column terminal with room for the frame.
+# Compact five-row block lettering keeps the product mark legible without
+# overflowing a typical 80-column terminal.
 _WORDMARK = r"""
- ██████╗ ██████╗ ██████╗ ███████╗     ██╗██╗   ██╗██████╗ ██╗   ██╗
-██╔════╝██╔═══██╗██╔══██╗██╔════╝     ██║██║   ██║██╔══██╗╚██╗ ██╔╝
-██║     ██║   ██║██║  ██║█████╗       ██║██║   ██║██████╔╝ ╚████╔╝
-██║     ██║   ██║██║  ██║██╔══╝  ██   ██║██║   ██║██╔══██╗  ╚██╔╝
-╚██████╗╚██████╔╝██████╔╝███████╗╚█████╔╝╚██████╔╝██║  ██║   ██║
- ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝ ╚════╝  ╚═════╝ ╚═╝  ╚═╝   ╚═╝
+█   █ █████ ████  ████  █████  ████  █████
+█   █ █     █   █ █   █   █   █       █
+█   █ ████  ████  █   █   █   █       █
+ █ █  █     █ █   █   █   █   █       █
+  █   █████ █  ██ ████  █████ ████   █
 """
 
 TAGLINE = "a jury of agents for your codebase"
@@ -155,8 +155,8 @@ def wordmark(width: int, unicode: bool) -> list[str]:
     if width >= 72 and unicode:
         return _WORDMARK.strip("\n").splitlines()
     if unicode:
-        return ["⟨ ⚖ ⟩  C O D E J U R Y"]
-    return ["<*>  C O D E J U R Y"]
+        return ["⟨ ⚖ ⟩  V E R D I C T"]
+    return ["<*>  V E R D I C T"]
 
 
 def console(**kwargs) -> Console:

@@ -139,10 +139,10 @@ def test_install_missing_prerequisite(monkeypatch):
 
 def test_install_runs_cmd_and_redetects(monkeypatch):
     b = agent_backends.BACKENDS["codex"]
-    monkeypatch.setattr(type(b), "install_cmd", ("true",))  # trivially succeeds
+    monkeypatch.setattr(type(b), "install_cmd", (sys.executable, "-c", "pass"))
     monkeypatch.setattr(type(b), "install_requires", "")
     # After "installing", point the path at a real binary so re-detect succeeds.
-    monkeypatch.setattr("app.config.settings.codex_cli_path", "ls")
+    monkeypatch.setattr("app.config.settings.codex_cli_path", sys.executable)
     b.reset_detection()
     r = agent_backends.install("codex")
     assert r["ok"] is True and r["detect"]["available"] is True

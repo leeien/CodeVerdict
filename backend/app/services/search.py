@@ -183,7 +183,7 @@ def _parse_json_matches(out: str, max_lines: int) -> list[str]:
 def _split_null(out: str, limit: int) -> list[str]:
     """`--null`-separated path list. Paths can legally contain newlines, so the
     NUL separator is the only safe split."""
-    return [p for p in out.split("\0") if p.strip()][:limit]
+    return [p.replace("\\", "/") for p in out.split("\0") if p.strip()][:limit]
 
 
 # --- Public API ---------------------------------------------------------------
